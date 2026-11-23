@@ -267,3 +267,28 @@ class CortesResultado(unittest.TestCase):
         b = dsp.picos_bandas(S["original"][: SR * 5], 200, 1.0)
         self.assertEqual(set(b), {"bajos", "medios", "altos"})
         self.assertEqual(b["bajos"]["ini"], 1.0)
+
+
+class Transicion(unittest.TestCase):
+    def test_efectos_antes_de_la_acapela(self):
+        from alargo_engine import fx
+
+        S, an = sintetico()
+        base, i0 = render.render(S, an, edicion(fx=fx.PRESETS["ninguno"]))
+        tr = {**fx.PRESETS["ninguno"], "transicion": {k: {**v, "on": True} for k, v in fx.PRESETS["ninguno"]["transicion"].items()}}
+        out, info = render.render(S, an, edicion(fx=tr))
+        t_ac = [s for s in info["segmentos"] if s["tipo"] == "acapela"][0]["ini"]
+        self.assertEqual(len(out) >= len(base), True)
+        self.assertTrue(np.isfinite(out).all())
+        i = int(t_ac * SR)
+        antes = slice(i - SR, i)      # el último segundo antes de la acapela cambia...
+        self.assertFalse(np.allclose(out[antes], base[antes]))
+        lejos = slice(int((t_ac - 15) * SR), int((t_ac - 10) * SR))   # ...pero lo anterior no
+        self.assertTrue(np.allclose(out[lejos], base[lejos]))
+
+    def test_presets_con_transicion(self):
+        from alargo_engine import fx
+
+        for n in ("suave", "intenso", "epico"):
+            self.assertTrue(any(v["on"] for v in fx.PRESETS[n]["transicion"].values()), n)
+        self.assertFalse(any(v["on"] for v in fx.PRESETS["ninguno"]["transicion"].values()))

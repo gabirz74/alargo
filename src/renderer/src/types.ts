@@ -20,6 +20,19 @@ export type Efectos = {
     bombo: { on: boolean; nivel_db: number }
     crescendo: { on: boolean; desde_db: number }
   }
+  transicion: {
+    filtro: { on: boolean; hasta_hz: number; compases: number }
+    riser: { on: boolean; compases: number; nivel_db: number }
+    platillo_inv: { on: boolean; tiempos: number; nivel_db: number }
+    sirena: { on: boolean; compases: number; nivel_db: number }
+    redoble: { on: boolean; tiempos: number; nivel_db: number }
+    silencio: { on: boolean; tiempos: number }
+    freno: { on: boolean; tiempos: number }
+    tartamudeo: { on: boolean; tiempos: number; division: number }
+    eco: { on: boolean; division: number; mezcla_db: number }
+    impacto: { on: boolean; nivel_db: number }
+    caida_graves: { on: boolean; nivel_db: number }
+  }
   salida: {
     eco: { on: boolean; division: number; mezcla_db: number }
     reverb: { on: boolean; seg: number; mezcla: number }

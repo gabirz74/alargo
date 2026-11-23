@@ -25,6 +25,19 @@ FX_APAGADO = {
         "bombo": {"on": False, "nivel_db": -12},                                 # bombo extra en cada tiempo
         "crescendo": {"on": False, "desde_db": -15},                             # la intro sube de volumen poco a poco
     },
+    "transicion": {              # justo ANTES de la acapela: terminan exactamente donde ella entra
+        "filtro": {"on": False, "hasta_hz": 700, "compases": 2},               # la canción se va apagando (sin agudos)
+        "riser": {"on": False, "compases": 2, "nivel_db": -14},                # subida de ruido
+        "platillo_inv": {"on": False, "tiempos": 4, "nivel_db": -14},          # platillo invertido
+        "sirena": {"on": False, "compases": 2, "nivel_db": -22},               # sirena que sube
+        "redoble": {"on": False, "tiempos": 4, "nivel_db": -12},               # redoble de caja
+        "silencio": {"on": False, "tiempos": 1},                               # silencio justo antes de entrar
+        "freno": {"on": False, "tiempos": 1},                                  # freno de vinilo
+        "tartamudeo": {"on": False, "tiempos": 1, "division": 0.25},           # beat repeat
+        "eco": {"on": False, "division": 0.75, "mezcla_db": -8},               # eco de lo último que suena, que cae sobre la acapela
+        "impacto": {"on": False, "nivel_db": -10},                             # golpe al entrar la acapela
+        "caida_graves": {"on": False, "nivel_db": -8},                         # sub grave al entrar la acapela
+    },
     "salida": {
         "eco": {"on": False, "division": 0.75, "mezcla_db": -8},                 # eco en la última frase de la voz
         "reverb": {"on": False, "seg": 2.5, "mezcla": 0.25},                     # cola de reverb tras la acapela
@@ -41,9 +54,11 @@ PRESETS = {
 }
 
 
-def _preset(nombre, intro, salida):
+def _preset(nombre, intro, salida, trans=None):
     d = copy.deepcopy(FX_APAGADO)
     d["preset"] = nombre
+    for k, v in (trans or {}).items():
+        d["transicion"][k].update(v, on=True)
     for k, v in intro.items():
         d["intro"][k].update(v, on=True)
     for k, v in salida.items():
@@ -55,6 +70,7 @@ PRESETS["suave"] = _preset(
     "suave",
     {"filtro": {"tipo": "lp", "desde_hz": 800, "compases": 4}, "impacto": {"nivel_db": -14}},
     {"eco": {"division": 0.75, "mezcla_db": -10}, "reverb": {"seg": 2.2, "mezcla": 0.2}},
+    {"filtro": {"hasta_hz": 900, "compases": 2}, "riser": {"compases": 1, "nivel_db": -16}, "impacto": {"nivel_db": -14}},
 )
 PRESETS["intenso"] = _preset(
     "intenso",
@@ -62,6 +78,8 @@ PRESETS["intenso"] = _preset(
      "redoble": {"tiempos": 4, "nivel_db": -12}, "bateria": {"nivel_db": 0}},
     {"eco": {"division": 0.75, "mezcla_db": -6}, "reverb": {"seg": 3.0, "mezcla": 0.3}, "filtro": {"hasta_hz": 600, "compases": 2},
      "bateria": {"nivel_db": -6}},
+    {"filtro": {"hasta_hz": 600, "compases": 2}, "riser": {"compases": 2, "nivel_db": -12}, "platillo_inv": {"tiempos": 4, "nivel_db": -13},
+     "redoble": {"tiempos": 4, "nivel_db": -12}, "impacto": {"nivel_db": -9}},
 )
 
 PRESETS["epico"] = _preset(
@@ -72,6 +90,9 @@ PRESETS["epico"] = _preset(
      "bombeo": {"profundidad": 0.4}, "crescendo": {"desde_db": -14}},
     {"eco": {"division": 0.75, "mezcla_db": -6}, "reverb": {"seg": 3.0, "mezcla": 0.3}, "filtro": {"hasta_hz": 600, "compases": 2},
      "bateria": {"nivel_db": -6}, "impacto_final": {"nivel_db": -10}},
+    {"filtro": {"hasta_hz": 500, "compases": 2}, "riser": {"compases": 2, "nivel_db": -11}, "platillo_inv": {"tiempos": 8, "nivel_db": -12},
+     "sirena": {"compases": 2, "nivel_db": -22}, "redoble": {"tiempos": 4, "nivel_db": -11}, "silencio": {"tiempos": 1},
+     "impacto": {"nivel_db": -7}, "caida_graves": {"nivel_db": -7}, "eco": {"division": 0.75, "mezcla_db": -7}},
 )
 
 FX_BASE = copy.deepcopy(PRESETS["suave"])

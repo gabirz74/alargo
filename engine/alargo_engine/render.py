@@ -401,6 +401,24 @@ def render(S, an, ed):
 
     # ---- acapela
     t_fin = t_ac if not hay_acapela else None
+    ftr = ed["fx"]["transicion"]
+    i_ac = int(round(t_ac * SR))
+    if hay_acapela and i_ac <= len(out):
+        # --- efectos sobre la propia canción, justo antes de que entre la acapela
+        if ftr["filtro"]["on"]:
+            n_f = min(i_ac, int(ftr["filtro"]["compases"] * T4 * SR))
+            out[i_ac - n_f:i_ac] = efectos.barrido_filtro(out[i_ac - n_f:i_ac], 20000.0, float(ftr["filtro"]["hasta_hz"]), "lp")
+        if ftr["tartamudeo"]["on"]:
+            m = min(i_ac, int(ftr["tartamudeo"]["tiempos"] * T * SR))
+            out[i_ac - m:i_ac] = efectos.tartamudeo(out[i_ac - m:i_ac], T, float(ftr["tartamudeo"]["division"]))
+        if ftr["freno"]["on"]:
+            m = min(i_ac, int(ftr["freno"]["tiempos"] * T * SR))
+            out[i_ac - m:i_ac] = efectos.freno(out[i_ac - m:i_ac])
+        if ftr["silencio"]["on"]:
+            m = min(i_ac, int(ftr["silencio"]["tiempos"] * T * SR))
+            r = int(0.012 * SR)
+            out[i_ac - m:i_ac] *= 0.0
+            out[max(0, i_ac - m - r):i_ac - m] *= np.linspace(1, 0, min(r, i_ac - m))[:, None] if i_ac - m > 0 else 1
     if hay_acapela:
         voz = S["voz"]
         n_s = min(ac["bars"] * T4, max(0.0, dur - tc)) if tc < dur else 0.0
@@ -464,13 +482,45 @@ def render(S, an, ed):
             cola = ext
             info["cola_efectos_s"] = round(extra, 2)
         out = unir(out, cola.astype(np.float32), xf)
+
+        def sumar_ac(a, y):
+            a = max(0, a)
+            m = min(len(y), len(out) - a)
+            if m > 0:
+                out[a:a + m] += y[:m]
+
+        if i_ac <= len(out):
+            if ftr["riser"]["on"]:
+                n_r = min(i_ac, int(ftr["riser"]["compases"] * T4 * SR))
+                ref = out[max(0, i_ac - 4 * SR):i_ac]
+                rms = float(np.sqrt((ref ** 2).mean())) if len(ref) else 0.05
+                sumar_ac(i_ac - n_r, efectos.ruido_riser(n_r, rms * efectos._db(ftr["riser"]["nivel_db"])))
+            if ftr["sirena"]["on"]:
+                n_s2 = min(i_ac, int(ftr["sirena"]["compases"] * T4 * SR))
+                sumar_ac(i_ac - n_s2, efectos.sirena(n_s2, pico_ref * efectos._db(ftr["sirena"]["nivel_db"])))
+            if ftr["platillo_inv"]["on"]:
+                n_p = min(i_ac, int(ftr["platillo_inv"]["tiempos"] * T * SR))
+                sumar_ac(i_ac - n_p, efectos.platillo_invertido(n_p, pico_ref * efectos._db(ftr["platillo_inv"]["nivel_db"])))
+            if ftr["redoble"]["on"]:
+                m = min(i_ac, int(ftr["redoble"]["tiempos"] * T * SR))
+                sumar_ac(i_ac - m, efectos.redoble(m, T, ftr["redoble"]["tiempos"], pico_ref * efectos._db(ftr["redoble"]["nivel_db"])))
+            if ftr["eco"]["on"]:
+                m = min(i_ac, int(T * SR))
+                envio = out[i_ac - m:i_ac].copy()
+                if ftr["silencio"]["on"]:
+                    envio = envio  # el eco sigue sonando aunque se calle la canción
+                sumar_ac(i_ac - m, efectos.eco(envio, float(ftr["eco"]["division"]) * T, 0.5, 2.5) * efectos._db(ftr["eco"]["mezcla_db"]))
+            if ftr["impacto"]["on"]:
+                sumar_ac(i_ac, efectos.impacto(pico_ref * efectos._db(ftr["impacto"]["nivel_db"])))
+            if ftr["caida_graves"]["on"]:
+                sumar_ac(i_ac, efectos.sub_grave(pico_ref * efectos._db(ftr["caida_graves"]["nivel_db"])))
         t_fin = t_ac + n_s
         info["acapela"] = dict(duracion_s=round(n_s, 3), compases=round(n_s / T4, 2))
     elif ed["end_fade_ms"] > 0:
         f = min(len(out), int(ed["end_fade_ms"] / 1000 * SR))
         out[-f:] *= np.linspace(1, 0, f)[:, None]
 
-    if not hay_acapela and any(v["on"] for v in ed["fx"]["salida"].values()):
+    if not hay_acapela and (any(v["on"] for v in ed["fx"]["salida"].values()) or any(v["on"] for v in ed["fx"]["transicion"].values())):
         avisos.append("fx_salida_sin_acapela")
 
     segmentos = []

@@ -65,7 +65,7 @@ type Store = {
   deshacer: () => void
   rehacer: () => void
   restablecer: () => void
-  restablecerSeccion: (z: 'intro' | 'voz' | 'acapela' | 'sonido' | 'efectos') => void
+  restablecerSeccion: (z: 'intro' | 'voz' | 'acapela' | 'sonido' | 'efectos' | 'transicion') => void
   escucharZona: (z: Zona) => void
   setAutoEscuchar: (v: boolean) => void
   cerrarGuia: () => void
@@ -293,10 +293,11 @@ export const useStore = create<Store>((set, get) => ({
     const cambioIntro = JSON.stringify([a.edicion.intro, a.edicion.song]) !== JSON.stringify([nueva.intro, nueva.song])
     const cambioAcap = JSON.stringify(a.edicion.acapela) !== JSON.stringify(nueva.acapela)
     const cambioFxIntro = JSON.stringify(a.edicion.fx?.intro) !== JSON.stringify(nueva.fx?.intro)
+    const cambioFxTrans = JSON.stringify(a.edicion.fx?.transicion) !== JSON.stringify(nueva.fx?.transicion)
     const cambioFxSalida = JSON.stringify(a.edicion.fx?.salida) !== JSON.stringify(nueva.fx?.salida)
     const cambioFuente = JSON.stringify([a.edicion.intro.fuente_s, a.edicion.intro.capas]) !== JSON.stringify([nueva.intro.fuente_s, nueva.intro.capas])
     const cambioCortes = JSON.stringify([a.edicion.cortes, a.edicion.cortes_salida]) !== JSON.stringify([nueva.cortes, nueva.cortes_salida])
-    zonaPendiente = cambioCortes ? 'corte' : cambioFuente ? 'introTodo' : cambioIntro || cambioFxIntro ? 'intro' : cambioAcap ? 'acapela' : cambioFxSalida ? 'fin' : null
+    zonaPendiente = cambioCortes ? 'corte' : cambioFuente ? 'introTodo' : cambioIntro || cambioFxIntro ? 'intro' : cambioAcap || cambioFxTrans ? 'acapela' : cambioFxSalida ? 'fin' : null
     const ahora = Date.now()
     const fusionar = !!clave && clave === ultimaClave && ahora - ultimoCambio < 900
     ultimaClave = clave ?? ''
@@ -353,6 +354,7 @@ export const useStore = create<Store>((set, get) => ({
       }
       if (z === 'acapela') e.acapela = { ...sug.acapela }
       if (z === 'efectos') e.fx = JSON.parse(JSON.stringify(sug.fx))
+      if (z === 'transicion') e.fx.transicion = JSON.parse(JSON.stringify(sug.fx.transicion))
       if (z === 'sonido') {
         e.crossfade_ms = sug.crossfade_ms
         e.end_fade_ms = sug.end_fade_ms

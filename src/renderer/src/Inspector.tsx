@@ -111,6 +111,11 @@ export function Inspector(): JSX.Element | null {
     }, clave)
   const fuenteIntro = e.intro.fuente_s ?? e.intro.start_s
   const kFuente = barK(an, fuenteIntro)
+  const setTr = (f: (x: Efectos['transicion']) => void, clave?: string): void =>
+    cambiar((x) => {
+      f(x.fx.transicion)
+      x.fx.preset = 'personalizado'
+    }, clave)
   const anacrusa = (it.start_s - e.song.start_s) / T
   const cercanas = an.entradas_voz.filter(([t, gap]) => t > e.song.start_s - 3 * t4 && t < e.song.start_s + 3 * t4 && gap >= 0.1).slice(0, 6)
   const kAc = ac.start_s !== null ? barK(an, ac.start_s) : 0
@@ -348,6 +353,57 @@ export function Inspector(): JSX.Element | null {
       </Seccion>
 
 
+      <Seccion titulo="Antes de la acapela" resumen={Object.values(e.fx.transicion).filter((v) => v.on).length ? `${Object.values(e.fx.transicion).filter((v) => v.on).length} efectos` : 'Sin efectos'}
+        descripcion="Un efecto justo antes de que entre la acapela, que termina exactamente cuando ella empieza, para que no pase de golpe de canción a acapela. Necesita la acapela final activada.">
+        <div className="mb-3 flex flex-wrap gap-2">
+          <Btn tam="sm" icono="play" onClick={() => escuchar('acapela')} titulo="Escucha el paso de la canción a la acapela (A)">Escuchar el paso</Btn>
+          <Btn tam="sm" variante="fantasma" icono="repetir" onClick={() => restablecerSeccion('transicion')} titulo="Vuelve a lo que propuso la IA">Restablecer</Btn>
+        </div>
+        <Fila apilada etiqueta="Estilo" ayuda="Un punto de partida; luego puedes tocar cada efecto.">
+          <Segmentado valor={'x'} opciones={[{ v: 'ninguno', t: 'Sin efecto' }, { v: 'suave', t: 'Suave' }, { v: 'intenso', t: 'Intenso' }, { v: 'epico', t: 'Épico' }]} onChange={(v) => fxPresets[v] && cambiar((x) => { x.fx.transicion = JSON.parse(JSON.stringify(fxPresets[v].transicion)); x.fx.preset = 'personalizado' })} />
+        </Fila>
+        <Efecto titulo="La canción se apaga" ayuda="La canción va perdiendo agudos justo antes de entrar la acapela." on={e.fx.transicion.filtro.on} onChange={(v) => setTr((f) => void (f.filtro.on = v))}>
+          <Deslizador etiqueta="Tarda" valor={e.fx.transicion.filtro.compases} min={1} max={4} formato={(v) => `${v} compases`} onChange={(v) => setTr((f) => void (f.filtro.compases = v), 'tr1')} />
+          <Deslizador etiqueta="Acaba apagada en" valor={e.fx.transicion.filtro.hasta_hz} min={150} max={3000} paso={50} formato={(v) => `${v} Hz`} onChange={(v) => setTr((f) => void (f.filtro.hasta_hz = v), 'tr2')} />
+        </Efecto>
+        <Efecto titulo="Subida de ruido" ayuda="Un barrido que crece y se corta justo cuando entra la acapela." on={e.fx.transicion.riser.on} onChange={(v) => setTr((f) => void (f.riser.on = v))}>
+          <Deslizador etiqueta="Dura" valor={e.fx.transicion.riser.compases} min={1} max={4} formato={(v) => `${v} compases`} onChange={(v) => setTr((f) => void (f.riser.compases = v), 'tr3')} />
+          <Deslizador etiqueta="Volumen" valor={e.fx.transicion.riser.nivel_db} min={-24} max={-4} formato={(v) => `${v} dB`} onChange={(v) => setTr((f) => void (f.riser.nivel_db = v), 'tr4')} />
+        </Efecto>
+        <Efecto titulo="Platillo invertido" ayuda="Un platillo al revés que crece hasta la entrada." on={e.fx.transicion.platillo_inv.on} onChange={(v) => setTr((f) => void (f.platillo_inv.on = v))}>
+          <Fila etiqueta="Dura"><Segmentado valor={e.fx.transicion.platillo_inv.tiempos} opciones={[{ v: 4, t: '4' }, { v: 8, t: '8' }, { v: 16, t: '16 tiempos' }]} onChange={(v) => setTr((f) => void (f.platillo_inv.tiempos = v))} /></Fila>
+          <Deslizador etiqueta="Volumen" valor={e.fx.transicion.platillo_inv.nivel_db} min={-24} max={-3} formato={(v) => `${v} dB`} onChange={(v) => setTr((f) => void (f.platillo_inv.nivel_db = v), 'tr5')} />
+        </Efecto>
+        <Efecto titulo="Sirena que sube" ayuda="Un tono que sube de altura hasta la entrada." on={e.fx.transicion.sirena.on} onChange={(v) => setTr((f) => void (f.sirena.on = v))}>
+          <Deslizador etiqueta="Dura" valor={e.fx.transicion.sirena.compases} min={1} max={4} formato={(v) => `${v} compases`} onChange={(v) => setTr((f) => void (f.sirena.compases = v), 'tr6')} />
+          <Deslizador etiqueta="Volumen" valor={e.fx.transicion.sirena.nivel_db} min={-36} max={-8} formato={(v) => `${v} dB`} onChange={(v) => setTr((f) => void (f.sirena.nivel_db = v), 'tr7')} />
+        </Efecto>
+        <Efecto titulo="Redoble de caja" ayuda="Una caja que va acelerando hasta que entra la acapela." on={e.fx.transicion.redoble.on} onChange={(v) => setTr((f) => void (f.redoble.on = v))}>
+          <Fila etiqueta="Dura"><Segmentado valor={e.fx.transicion.redoble.tiempos} opciones={[{ v: 2, t: '2' }, { v: 4, t: '4' }, { v: 8, t: '8 tiempos' }]} onChange={(v) => setTr((f) => void (f.redoble.tiempos = v))} /></Fila>
+          <Deslizador etiqueta="Volumen" valor={e.fx.transicion.redoble.nivel_db} min={-24} max={-3} formato={(v) => `${v} dB`} onChange={(v) => setTr((f) => void (f.redoble.nivel_db = v), 'tr8')} />
+        </Efecto>
+        <Efecto titulo="Silencio antes de entrar" ayuda="La canción se calla un instante para que la acapela entre con más fuerza." on={e.fx.transicion.silencio.on} onChange={(v) => setTr((f) => void (f.silencio.on = v))}>
+          <Fila etiqueta="Dura"><Segmentado valor={e.fx.transicion.silencio.tiempos} opciones={[{ v: 1, t: '1 tiempo' }, { v: 2, t: '2 tiempos' }]} onChange={(v) => setTr((f) => void (f.silencio.tiempos = v))} /></Fila>
+        </Efecto>
+        <Efecto titulo="Freno de vinilo" ayuda="La canción se frena y el tono cae justo antes de entrar." on={e.fx.transicion.freno.on} onChange={(v) => setTr((f) => void (f.freno.on = v))}>
+          <Fila etiqueta="Dura"><Segmentado valor={e.fx.transicion.freno.tiempos} opciones={[{ v: 1, t: '1 tiempo' }, { v: 2, t: '2' }, { v: 4, t: '4' }]} onChange={(v) => setTr((f) => void (f.freno.tiempos = v))} /></Fila>
+        </Efecto>
+        <Efecto titulo="Tartamudeo" ayuda="Un trocito de la canción se repite justo antes de entrar la acapela." on={e.fx.transicion.tartamudeo.on} onChange={(v) => setTr((f) => void (f.tartamudeo.on = v))}>
+          <Fila etiqueta="Dura"><Segmentado valor={e.fx.transicion.tartamudeo.tiempos} opciones={[{ v: 1, t: '1 tiempo' }, { v: 2, t: '2' }, { v: 4, t: '4' }]} onChange={(v) => setTr((f) => void (f.tartamudeo.tiempos = v))} /></Fila>
+          <Fila etiqueta="Trocito"><Segmentado valor={e.fx.transicion.tartamudeo.division} opciones={[{ v: 0.5, t: '½' }, { v: 0.25, t: '¼' }, { v: 0.125, t: '⅛' }]} onChange={(v) => setTr((f) => void (f.tartamudeo.division = v))} /></Fila>
+        </Efecto>
+        <Efecto titulo="Eco de la canción" ayuda="Lo último que suena se repite como un eco y cae sobre la entrada de la acapela." on={e.fx.transicion.eco.on} onChange={(v) => setTr((f) => void (f.eco.on = v))}>
+          <Fila etiqueta="Velocidad"><Segmentado valor={e.fx.transicion.eco.division} opciones={[{ v: 0.5, t: 'Rápido' }, { v: 0.75, t: 'Medio' }, { v: 1, t: 'Lento' }]} onChange={(v) => setTr((f) => void (f.eco.division = v))} /></Fila>
+          <Deslizador etiqueta="Volumen del eco" valor={e.fx.transicion.eco.mezcla_db} min={-18} max={0} formato={(v) => `${v} dB`} onChange={(v) => setTr((f) => void (f.eco.mezcla_db = v), 'tr9')} />
+        </Efecto>
+        <Efecto titulo="Golpe al entrar" ayuda="Un golpe grave con platillo justo cuando empieza la acapela." on={e.fx.transicion.impacto.on} onChange={(v) => setTr((f) => void (f.impacto.on = v))}>
+          <Deslizador etiqueta="Volumen" valor={e.fx.transicion.impacto.nivel_db} min={-24} max={-3} formato={(v) => `${v} dB`} onChange={(v) => setTr((f) => void (f.impacto.nivel_db = v), 'tr10')} />
+        </Efecto>
+        <Efecto titulo="Caída de graves" ayuda="Un sub grave largo que retumba al entrar la acapela." on={e.fx.transicion.caida_graves.on} onChange={(v) => setTr((f) => void (f.caida_graves.on = v))}>
+          <Deslizador etiqueta="Volumen" valor={e.fx.transicion.caida_graves.nivel_db} min={-24} max={-3} formato={(v) => `${v} dB`} onChange={(v) => setTr((f) => void (f.caida_graves.nivel_db = v), 'tr11')} />
+        </Efecto>
+      </Seccion>
+
       <Seccion titulo="Efectos de entrada" descripcion="Efectos de DJ para que la intro sea más épica y energética, como en un mix en directo. Elige un estilo y ajusta lo que quieras; cada efecto se puede activar por separado." resumen={{ ninguno: 'Sin efectos', personalizado: 'Personalizados', suave: 'Suave', intenso: 'Intenso', epico: 'Épico' }[e.fx.preset] ?? e.fx.preset}>
         <div className="mb-3 flex flex-wrap gap-2">
           <Btn tam="sm" icono="play" onClick={() => escuchar('intro')} titulo="Escucha la entrada (I)">Escuchar la entrada</Btn>
@@ -410,7 +466,7 @@ export function Inspector(): JSX.Element | null {
         </Efecto>
       </Seccion>
 
-      <Seccion titulo="Efectos de salida" descripcion="Para el final de tu extended. Necesitan la acapela final activada." resumen={[e.fx.salida.eco.on, e.fx.salida.reverb.on, e.fx.salida.filtro.on, e.fx.salida.bateria.on, e.fx.salida.corte_ritmico.on, e.fx.salida.freno.on, e.fx.salida.impacto_final.on].filter(Boolean).length + ' activos'}>
+      <Seccion titulo="Efectos de salida" descripcion="Para el final de tu extended. Necesitan la acapela final activada. (Los efectos para pasar a la acapela están en «Antes de la acapela».)" resumen={[e.fx.salida.eco.on, e.fx.salida.reverb.on, e.fx.salida.filtro.on, e.fx.salida.bateria.on, e.fx.salida.corte_ritmico.on, e.fx.salida.freno.on, e.fx.salida.impacto_final.on].filter(Boolean).length + ' activos'}>
         <div className="mb-2 flex gap-2">
           <Btn tam="sm" icono="play" onClick={() => escuchar('fin')} titulo="Escucha el final (F)">Escuchar el final</Btn>
         </div>
