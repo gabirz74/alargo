@@ -79,6 +79,8 @@ class Progress:
     def set(self, frac, mensaje=None):
         frac = min(1.0, max(0.0, float(frac)))
         total = self.base + self.span * frac
+        if total < self.last:
+            return
         if total - self.last < 0.002 and frac < 1.0 and mensaje is None:
             return
         self.last = total

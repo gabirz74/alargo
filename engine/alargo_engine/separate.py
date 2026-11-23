@@ -29,6 +29,7 @@ def modelos_necesarios(calidad):
 
 
 _prog = None
+_barras = {"n": 1, "i": 0}   # barras tqdm esperadas en la etapa actual (Demucs 'ft' usa 4 modelos, uno tras otro) y cuántas van
 
 
 def instalar_progreso(prog):
@@ -45,12 +46,19 @@ def instalar_progreso(prog):
     def init(self, *a, **kw):
         kw["file"] = open(os.devnull, "w")
         original_init(self, *a, **kw)
+        try:
+            if self.total and self.total > 1:
+                _barras["i"] += 1
+        except Exception:
+            pass
 
     def update(self, n=1):
         r = original_update(self, n)
         try:
             if _prog is not None and self.total and self.total > 1:
-                _prog.set(self.n / self.total)
+                n = max(1, _barras["n"])
+                i = min(max(1, _barras["i"]), n)
+                _prog.set(((i - 1) + min(1.0, self.n / self.total)) / n)
         except Exception:
             pass
         return r
@@ -105,8 +113,9 @@ def separar(wav, dir_trabajo, calidad, prog):
     os.makedirs(dir_trabajo, exist_ok=True)
     res = {}
 
-    def pasada(modelo, nombres, base, span, etiqueta):
+    def pasada(modelo, nombres, base, span, etiqueta, barras=1):
         prog.etapa(etiqueta, base, span)
+        _barras.update(n=barras, i=0)
         sep = _separador(dir_trabajo)
         sep.load_model(modelo)
         sep.separate(wav, nombres)
@@ -117,8 +126,8 @@ def separar(wav, dir_trabajo, calidad, prog):
             res[v] = p
 
     if calidad == "alta":
-        pasada(DEMUCS, {"Drums": "drums", "Bass": "bass", "Other": "other", "Vocals": "voz_demucs"}, 0.04, 0.2, "Separando el ritmo")
+        pasada(DEMUCS, {"Drums": "drums", "Bass": "bass", "Other": "other", "Vocals": "voz_demucs"}, 0.04, 0.2, "Separando el ritmo", 4)
         pasada(ROFORMER, {"Vocals": "voz_roformer", "Instrumental": "inst_roformer"}, 0.24, 0.56, "Separando la voz")
     else:
-        pasada(DEMUCS, {"Drums": "drums", "Bass": "bass", "Other": "other", "Vocals": "voz_demucs"}, 0.04, 0.76, "Separando las pistas")
+        pasada(DEMUCS, {"Drums": "drums", "Bass": "bass", "Other": "other", "Vocals": "voz_demucs"}, 0.04, 0.76, "Separando las pistas", 4)
     return res
