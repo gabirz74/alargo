@@ -66,6 +66,7 @@ export type Proyecto = {
   error?: string
   progreso?: number
   etapa?: string
+  inicio?: number
 }
 
 export type Segmento = { tipo: 'intro' | 'cancion' | 'acapela'; ini: number; fin: number; origen_ini: number }

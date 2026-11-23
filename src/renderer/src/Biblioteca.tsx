@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from './store'
 import type { Proyecto } from './types'
 import { Barra, Btn, BtnIcono, Icono, Segmentado } from './ui'
@@ -69,15 +69,15 @@ function Instalador(): JSX.Element {
   )
 }
 
-function Soltar(): JSX.Element {
+function Soltar({ compacto }: { compacto?: boolean }): JSX.Element {
   const { elegirArchivos, ajustes, irA } = useStore()
   return (
-    <div className="mx-auto flex w-full max-w-[760px] flex-col items-center rounded-[28px] border-2 border-dashed border-line px-10 py-14 text-center transition-colors">
+    <div className={`mx-auto flex w-full max-w-[760px] flex-col items-center rounded-[28px] border-2 border-dashed border-line px-10 text-center transition-colors ${compacto ? 'py-8' : 'py-14'}`}>
       <div className="grid h-14 w-14 place-items-center rounded-2xl bg-accent-soft text-accent">
         <Icono n="nota" size={26} />
       </div>
       <h1 className="display mt-6 text-[34px] font-bold leading-tight">Suelta una canción para alargarla</h1>
-      <p className="mt-3 max-w-[50ch] text-[15px] text-soft">
+      <p className={`mt-3 max-w-[50ch] text-[15px] text-soft ${compacto ? 'hidden' : ''}`}>
         Alargo añade una intro instrumental con ritmo para mezclar y deja el último estribillo en acapela. Después lo ajustas todo a tu gusto.
       </p>
       <div className="mt-7 flex items-center gap-3">
@@ -89,6 +89,91 @@ function Soltar(): JSX.Element {
         </button>
       </div>
       <p className="mt-6 text-[12px] text-faint">MP3, WAV, FLAC, M4A, OGG y más. Todo ocurre en tu ordenador.</p>
+    </div>
+  )
+}
+
+
+const PASOS_ALTA = [
+  { t: 'Preparar el audio', d: 'Se convierte la canción a un formato de trabajo.' },
+  { t: 'Separar el ritmo y el bajo', d: 'La IA aísla la batería y el bajo para poder hacer la intro con ritmo.' },
+  { t: 'Separar la voz', d: 'La IA aísla la voz del resto. Es el paso más largo y el que da la mejor calidad para la acapela.' },
+  { t: 'Buscar el ritmo y la estructura', d: 'Se detectan el tempo, los compases, dónde entra la voz y cuál es el último estribillo.' }
+]
+const PASOS_RAPIDA = [PASOS_ALTA[0], { t: 'Separar las pistas', d: 'La IA separa la voz, la batería, el bajo y el resto de la canción.' }, PASOS_ALTA[3]]
+
+function indicePaso(etapa: string | undefined, alta: boolean): number {
+  const e = (etapa ?? '').toLowerCase()
+  if (e.includes('preparando')) return 0
+  if (e.includes('separando la voz')) return 2
+  if (e.includes('separando')) return 1
+  return alta ? 3 : 2
+}
+
+const mmss = (ms: number): string => {
+  const s = Math.max(0, Math.round(ms / 1000))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+function Analizando({ p, posicion }: { p: Proyecto; posicion: number }): JSX.Element {
+  const [ahora, setAhora] = useState(Date.now())
+  useEffect(() => {
+    const t = window.setInterval(() => setAhora(Date.now()), 1000)
+    return () => window.clearInterval(t)
+  }, [])
+  const alta = p.calidad === 'alta'
+  const pasos = alta ? PASOS_ALTA : PASOS_RAPIDA
+  const enCola = p.estado === 'en_cola'
+  const i = enCola ? -1 : indicePaso(p.etapa, alta)
+  const frac = p.progreso ?? 0
+  const transcurrido = p.inicio ? ahora - p.inicio : 0
+  const restante = !enCola && frac > 0.08 && p.inicio ? (transcurrido / frac) * (1 - frac) : null
+  return (
+    <div className="rounded-3xl bg-surface p-7 shadow-[0_1px_0_var(--line)]">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-[12px] text-accent">
+            <span className="pulso inline-block h-2 w-2 rounded-full bg-accent" />
+            {enCola ? `En cola (${posicion} por delante)` : 'Analizando con inteligencia artificial'}
+          </div>
+          <h2 className="display mt-1 truncate text-[24px] font-bold leading-tight">{p.titulo || 'Canción'}</h2>
+          {p.artista && <div className="truncate text-[13px] text-soft">{p.artista}</div>}
+        </div>
+        <Btn tam="sm" variante="fantasma" onClick={() => void window.api.proyectos.cancelar(p.id)}>Cancelar</Btn>
+      </div>
+
+      {!enCola && (
+        <>
+          <div className="mt-6 flex items-baseline justify-between text-[13px]">
+            <span className="font-medium">{pasos[i]?.t}…</span>
+            <span className="num text-soft">{Math.round(frac * 100)} %</span>
+          </div>
+          <Barra valor={frac} className="mt-2" />
+          <div className="num mt-2 flex flex-wrap gap-x-5 text-[12px] text-faint">
+            <span>Llevamos {mmss(transcurrido)}</span>
+            {restante !== null && <span>Quedan unos {restante < 90000 ? 'segundos' : `${Math.max(1, Math.round(restante / 60000))} min`} (aproximado)</span>}
+          </div>
+          <ol className="mt-6 grid gap-3">
+            {pasos.map((x, k) => (
+              <li key={x.t} className={`flex gap-3 ${k > i ? 'opacity-45' : ''}`}>
+                <span className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] ${k < i ? 'bg-accent text-accent-ink' : k === i ? 'border-2 border-accent text-accent' : 'border border-faint text-faint'}`}>
+                  {k < i ? <Icono n="ok" size={12} trazo={2.4} /> : k + 1}
+                </span>
+                <span className="min-w-0">
+                  <span className={`block text-[14px] ${k === i ? 'font-semibold' : ''}`}>{x.t}</span>
+                  {k === i && <span className="block text-[13px] leading-snug text-soft">{x.d}</span>}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+      <p className="mt-6 rounded-2xl bg-sunken px-4 py-3 text-[13px] leading-relaxed text-soft">
+        {alta
+          ? 'Es normal que tarde varios minutos por canción: la calidad alta trabaja con modelos muy grandes. No se ha colgado.'
+          : 'Es normal que tarde unos minutos por canción. No se ha colgado.'}{' '}
+        Puedes usar otras apps mientras tanto, pero no cierres Alargo. Sólo se hace una vez por canción: después, editar y escuchar es instantáneo.
+      </p>
     </div>
   )
 }
@@ -135,16 +220,25 @@ function Fila({ p }: { p: Proyecto }): JSX.Element {
 export function Biblioteca(): JSX.Element {
   const { proyectos, motor } = useStore()
   const listoMotor = !!motor && motor.motorListo && motor.faltan.length === 0
+  const enCurso = proyectos.filter((p) => p.estado === 'analizando' || p.estado === 'en_cola').sort((a, b) => (a.estado === b.estado ? 0 : a.estado === 'analizando' ? -1 : 1))
+  const resto = proyectos.filter((p) => p.estado !== 'analizando' && p.estado !== 'en_cola')
   return (
     <div className="flex h-full flex-col">
       <Cabecera />
       <main className="flex-1 overflow-y-auto px-8 pb-10">
         <div className="mx-auto max-w-[860px]">
-          {!motor ? null : listoMotor ? <Soltar /> : <Instalador />}
-          {proyectos.length > 0 && (
+          {enCurso.length > 0 && (
+            <div className="mb-8 grid gap-4">
+              {enCurso.map((p, k) => (
+                <Analizando key={p.id} p={p} posicion={Math.max(0, k)} />
+              ))}
+            </div>
+          )}
+          {!motor ? null : listoMotor ? <Soltar compacto={enCurso.length > 0} /> : <Instalador />}
+          {resto.length > 0 && (
             <section className="mt-12">
               <h2 className="display mb-2 px-4 text-[18px] font-semibold">Tus canciones</h2>
-              <ul>{proyectos.map((p) => <Fila key={p.id} p={p} />)}</ul>
+              <ul>{resto.map((p) => <Fila key={p.id} p={p} />)}</ul>
             </section>
           )}
         </div>

@@ -14,7 +14,7 @@ function Avisos(): JSX.Element {
           <Icono n={a.tipo === 'ok' ? 'ok' : a.tipo === 'error' ? 'aviso' : 'nota'} size={16} />
           <span>{a.texto}</span>
           {a.accion && (
-            <button type="button" onClick={() => void window.api.sistema.mostrar(a.accion!.ruta)} className="rounded-lg px-2 py-1 font-medium underline underline-offset-2 hover:opacity-80">
+            <button type="button" onClick={() => { const ac = a.accion!; quitarAviso(a.id); if (ac.abrir) void useStore.getState().abrir(ac.abrir); else if (ac.ruta) void window.api.sistema.mostrar(ac.ruta) }} className="rounded-lg px-2 py-1 font-medium underline underline-offset-2 hover:opacity-80">
               {a.accion.texto}
             </button>
           )}

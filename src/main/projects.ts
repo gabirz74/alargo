@@ -16,6 +16,7 @@ export type Proyecto = {
   error?: string
   progreso?: number
   etapa?: string
+  inicio?: number
 }
 
 type Oyente = (p: Proyecto) => void
@@ -37,7 +38,7 @@ function leerMeta(id: string): Proyecto | null {
   }
 }
 function escribirMeta(p: Proyecto): void {
-  const { progreso: _p, etapa: _e, ...resto } = p
+  const { progreso: _p, etapa: _e, inicio: _i, ...resto } = p
   writeFileSync(archivoMeta(p.id), JSON.stringify(resto, null, 1))
 }
 
@@ -104,6 +105,7 @@ async function siguiente(): Promise<void> {
   const motor = new Motor()
   corriendo = { id, motor }
   p.estado = 'analizando'
+  p.inicio = Date.now()
   avisar(p)
   try {
     const r = await motor.pedir('analyze', { proyecto: dirProyecto(id), entrada: p.archivo, calidad: p.calidad }, (pr) => {

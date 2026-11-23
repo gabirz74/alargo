@@ -19,7 +19,15 @@ const RUTAS: Record<string, string> = {
   ok: 'M5 12.5l4.5 4.5L19 7.5',
   aviso: 'M12 8v5m0 3.5v.01M10.3 4.2L3 17a2 2 0 001.7 3h14.6a2 2 0 001.7-3L13.7 4.2a2 2 0 00-3.4 0z',
   ojo: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 100-6 3 3 0 000 6z',
-  union: 'M5 12h4m6 0h4M12 7v10'
+  union: 'M5 12h4m6 0h4M12 7v10',
+  inicio: 'M6 5v14M19 5l-10 7 10 7',
+  final: 'M18 5v14M5 5l10 7-10 7',
+  atras5: 'M11 6l-6 6 6 6M19 6l-6 6 6 6',
+  adelante5: 'M13 6l6 6-6 6M5 6l6 6-6 6',
+  volumen: 'M4 10v4h4l5 4V6l-5 4zM16 9a4 4 0 010 6M18.5 6.5a8 8 0 010 11',
+  silencio: 'M4 10v4h4l5 4V6l-5 4zM17 9l4 6M21 9l-4 6',
+  teclado: 'M3 7h18v10H3zM7 11h.01M11 11h.01M15 11h.01M8 14h8',
+  ayuda: 'M9.5 9a2.5 2.5 0 115 0c0 1.7-2.5 2-2.5 4M12 17v.01'
 }
 
 export function Icono({ n, size = 18, className = '', trazo = 1.7 }: { n: keyof typeof RUTAS | string; size?: number; className?: string; trazo?: number }): JSX.Element {
@@ -112,7 +120,7 @@ export function Deslizador({ etiqueta, valor, min, max, paso = 1, unidad, onChan
   )
 }
 
-export function Seccion({ titulo, resumen, children, abierta = false, derecha }: { titulo: string; resumen?: string; children: ReactNode; abierta?: boolean; derecha?: ReactNode }): JSX.Element {
+export function Seccion({ titulo, resumen, children, abierta = false, derecha, descripcion }: { titulo: string; resumen?: string; children: ReactNode; abierta?: boolean; derecha?: ReactNode; descripcion?: string }): JSX.Element {
   const [open, setOpen] = useState(abierta)
   return (
     <section className="border-b border-line last:border-0">
@@ -124,7 +132,12 @@ export function Seccion({ titulo, resumen, children, abierta = false, derecha }:
         </button>
         {derecha}
       </div>
-      {open && <div className="pb-4 pl-[22px]">{children}</div>}
+      {open && (
+        <div className="pb-4 pl-[22px]">
+          {descripcion && <p className="mb-3 text-[12px] leading-snug text-soft">{descripcion}</p>}
+          {children}
+        </div>
+      )}
     </section>
   )
 }

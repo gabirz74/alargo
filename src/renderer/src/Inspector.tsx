@@ -5,12 +5,29 @@ import { barK, barNumber, barTime, fmt, T4 } from './util'
 
 const sgn = (v: number, d = 1): string => (v > 0 ? '+' : '') + v.toFixed(d).replace('.', ',')
 
+function Acciones({ onEscuchar, onRestablecer }: { onEscuchar?: () => void; onRestablecer: () => void }): JSX.Element {
+  return (
+    <div className="mb-3 flex flex-wrap gap-2">
+      {onEscuchar && (
+        <Btn tam="sm" icono="play" onClick={onEscuchar} titulo="Escucha el empalme afectado por esta sección">
+          Escuchar el empalme
+        </Btn>
+      )}
+      <Btn tam="sm" variante="fantasma" icono="repetir" onClick={onRestablecer} titulo="Devuelve esta sección a lo que propuso la IA">
+        Restablecer
+      </Btn>
+    </div>
+  )
+}
+
 export function Inspector(): JSX.Element | null {
   const ab = useStore((s) => s.abierto)
   const info = useStore((s) => s.preview.info)
   const cambiar = useStore((s) => s.cambiar)
   const moverRejilla = useStore((s) => s.moverRejilla)
   const reiniciarRejilla = useStore((s) => s.reiniciarRejilla)
+  const escuchar = useStore((s) => s.escucharZona)
+  const restablecerSeccion = useStore((s) => s.restablecerSeccion)
   if (!ab) return null
   const { edicion: e, analisis: an } = ab
   const T = an.grid.T
@@ -24,10 +41,11 @@ export function Inspector(): JSX.Element | null {
 
   return (
     <div>
-      <Seccion titulo="Intro" abierta resumen={it.enabled ? `${it.bars} compases` : 'Apagada'} derecha={<Interruptor etiqueta="Intro" valor={it.enabled} onChange={(v) => cambiar((x) => void (x.intro.enabled = v))} />}>
+      <Seccion titulo="Intro" abierta descripcion="Un tramo instrumental con ritmo antes de que entre la canción, para poder mezclarla. El bloque gris de la pista de arriba es el trozo que se usa." resumen={it.enabled ? `${it.bars} compases` : 'Apagada'} derecha={<Interruptor etiqueta="Intro" valor={it.enabled} onChange={(v) => cambiar((x) => void (x.intro.enabled = v))} />}>
         {it.enabled && (
           <>
-            <Fila etiqueta="Sonido">
+            <Acciones onEscuchar={() => escuchar('intro')} onRestablecer={() => restablecerSeccion('intro')} />
+            <Fila etiqueta="Sonido" ayuda="Qué se oye en la intro.">
               <Segmentado<Fuente> valor={it.source} opciones={[{ v: 'inst', t: 'Completo', titulo: 'Todo el instrumental' }, { v: 'drums', t: 'Batería' }, { v: 'drums_bass', t: 'Bat. + bajo' }]} onChange={(v) => cambiar((x) => void (x.intro.source = v))} />
             </Fila>
             <Fila etiqueta="Duración" ayuda="En compases (4 tiempos cada uno).">
@@ -36,28 +54,6 @@ export function Inspector(): JSX.Element | null {
             <Fila etiqueta="Repetir en bucle" ayuda="Repite los primeros compases hasta llenar la intro.">
               <Segmentado valor={it.loop_bars} opciones={[{ v: 0, t: 'No' }, { v: 1, t: '1' }, { v: 2, t: '2' }, { v: 4, t: '4' }]} onChange={(v) => cambiar((x) => void (x.intro.loop_bars = v))} />
             </Fila>
-
-            <div className="mt-3 border-t border-line pt-3">
-              <div className="mb-1 text-[13px] font-medium">Entrada de la voz</div>
-              <p className="mb-2 text-[12px] leading-snug text-faint">
-                La canción retoma {anacrusa > 0.05 ? `${anacrusa.toFixed(1).replace('.', ',')} tiempos antes` : anacrusa < -0.05 ? `${Math.abs(anacrusa).toFixed(1).replace('.', ',')} tiempos después` : 'justo en'} del inicio del bloque. Arrastra «Entra la voz» en la línea de tiempo o afina aquí.
-              </p>
-              <Ajuste
-                pasos={[{ t: '−1 t', d: -T }, { t: '−10 ms', d: -0.01 }, { t: '+10 ms', d: 0.01 }, { t: '+1 t', d: T }]}
-                onPaso={(d) => cambiar((x) => void (x.song.start_s += d), 'voz')}
-                texto={fmt(e.song.start_s, true)}
-              />
-              {cercanas.length > 0 && (
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <span className="text-[12px] text-faint">Entradas detectadas</span>
-                  {cercanas.map(([t]) => (
-                    <Chip key={t} activo={Math.abs(e.song.start_s - (t - 0.015)) < 0.02} onClick={() => cambiar((x) => void (x.song.start_s = t - 0.015))}>
-                      {fmt(t, true)}
-                    </Chip>
-                  ))}
-                </div>
-              )}
-            </div>
 
             <div className="mt-3 border-t border-line pt-3">
               <Fila etiqueta="Igualar volumen" ayuda="Sube o baja la intro hasta sonar como la canción.">
@@ -84,12 +80,37 @@ export function Inspector(): JSX.Element | null {
         {!it.enabled && <p className="text-[12px] text-faint">Sin intro, el extended empieza donde retoma la canción.</p>}
       </Seccion>
 
-      <Seccion titulo="Acapela final" abierta resumen={ac.enabled ? `${ac.bars} compases` : 'Apagada'} derecha={<Interruptor etiqueta="Acapela final" valor={ac.enabled} onChange={(v) => cambiar((x) => {
+      <Seccion titulo="Entrada de la voz" abierta descripcion="Dónde retoma la canción tras la intro. La voz suele empezar un poco antes del compás (anacrusa); la IA lo detecta, tú puedes afinarlo." resumen={fmt(e.song.start_s, true)}>
+        <Acciones onEscuchar={() => escuchar('intro')} onRestablecer={() => restablecerSeccion('voz')} />
+        <div>
+          <p className="mb-2 text-[12px] leading-snug text-faint">
+            La canción retoma {anacrusa > 0.05 ? `${anacrusa.toFixed(1).replace('.', ',')} tiempos antes` : anacrusa < -0.05 ? `${Math.abs(anacrusa).toFixed(1).replace('.', ',')} tiempos después` : 'justo en'} del inicio del bloque. También puedes arrastrar la línea «Entra la voz» en la pista de arriba.
+          </p>
+          <Ajuste
+            pasos={[{ t: '−1 t', d: -T }, { t: '−10 ms', d: -0.01 }, { t: '+10 ms', d: 0.01 }, { t: '+1 t', d: T }]}
+            onPaso={(d) => cambiar((x) => void (x.song.start_s += d), 'voz')}
+            texto={fmt(e.song.start_s, true)}
+          />
+          {cercanas.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[12px] text-faint">Entradas detectadas</span>
+              {cercanas.map(([t]) => (
+                <Chip key={t} activo={Math.abs(e.song.start_s - (t - 0.015)) < 0.02} onClick={() => cambiar((x) => void (x.song.start_s = t - 0.015))}>
+                  {fmt(t, true)}
+                </Chip>
+              ))}
+            </div>
+          )}
+        </div>
+      </Seccion>
+
+      <Seccion titulo="Acapela final" abierta descripcion="El final de tu extended: solo la voz de un estribillo, sin instrumental. El bloque azul de la pista de arriba es el trozo que se usa." resumen={ac.enabled ? `${ac.bars} compases` : 'Apagada'} derecha={<Interruptor etiqueta="Acapela final" valor={ac.enabled} onChange={(v) => cambiar((x) => {
         x.acapela.enabled = v
         if (v && x.acapela.start_s === null) x.acapela.start_s = ab.sugerencia.acapela.start_s ?? an.alternativas.acapela[0]?.start_s ?? null
       })} />}>
         {ac.enabled && ac.start_s !== null ? (
           <>
+            <Acciones onEscuchar={() => escuchar('acapela')} onRestablecer={() => restablecerSeccion('acapela')} />
             <Fila etiqueta="Empieza en el compás" ayuda={fmt(ac.start_s, true)}>
               <Ajuste pasos={[{ t: '−8', d: -8 }, { t: '−1', d: -1 }, { t: '+1', d: 1 }, { t: '+8', d: 8 }]} onPaso={(d) => cambiar((x) => void (x.acapela.start_s = barTime(an, barK(an, x.acapela.start_s ?? 0) + d)), 'ac-pos')} texto={String(barNumber(an, kAc))} />
             </Fila>
@@ -118,7 +139,7 @@ export function Inspector(): JSX.Element | null {
         )}
       </Seccion>
 
-      <Seccion titulo="Ritmo" resumen={`${an.bpm.toString().replace('.', ',')} BPM`}>
+      <Seccion titulo="Ritmo" descripcion="La rejilla de compases que se ve sobre la onda. Todo se pega a ella. Solo toca esto si las líneas no coinciden con los golpes." resumen={`${an.bpm.toString().replace('.', ',')} BPM`}>
         <Fila etiqueta="Tempo" ayuda={`Rejilla fiable al ${Math.round(an.grid.fiables * 100)} %`}>
           <span className="num text-[15px] font-medium">{an.bpm.toString().replace('.', ',')} BPM</span>
         </Fila>
@@ -135,7 +156,8 @@ export function Inspector(): JSX.Element | null {
         </div>
       </Seccion>
 
-      <Seccion titulo="Sonido" resumen={`Fundido ${e.crossfade_ms} ms`}>
+      <Seccion titulo="Sonido" descripcion="Cómo se unen los tramos entre sí y el volumen general al exportar." resumen={`Fundido ${e.crossfade_ms} ms`}>
+        <Acciones onRestablecer={() => restablecerSeccion('sonido')} />
         <Deslizador etiqueta="Fundido en las uniones" valor={e.crossfade_ms} min={0} max={100} paso={1} formato={(v) => `${v} ms`} onChange={(v) => cambiar((x) => void (x.crossfade_ms = v), 'xf')} ayuda="Más fundido suaviza el empalme; menos lo deja más seco." />
         <Fila etiqueta="Limitador suave" ayuda="Evita que la intro o la acapela saturen al exportar.">
           <Interruptor etiqueta="Limitador suave" valor={e.master.limiter} onChange={(v) => cambiar((x) => void (x.master.limiter = v))} />

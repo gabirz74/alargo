@@ -16,8 +16,10 @@ type Abierto = {
 }
 type Preview = { info: InfoRender | null; picos: Picos | null; renderizando: boolean; error: string | null }
 type Instalacion = { activa: boolean; fase: string; fraction: number; detalle?: string; error?: string }
-export type Aviso = { id: number; texto: string; tipo: 'ok' | 'error' | 'info'; accion?: { texto: string; ruta: string } }
+export type Aviso = { id: number; texto: string; tipo: 'ok' | 'error' | 'info'; accion?: { texto: string; ruta?: string; abrir?: string } }
 type Vista = 'biblioteca' | 'editor' | 'ajustes'
+export type Zona = 'intro' | 'acapela'
+export type Resalte = { zona: Zona; hasta: number } | null
 
 type Store = {
   vista: Vista
@@ -31,6 +33,9 @@ type Store = {
   avisos: Aviso[]
   exportando: { activo: boolean; fraction: number }
   zoom: number // píxeles por segundo; 0 = ajustar a la ventana
+  autoEscuchar: boolean
+  resalte: Resalte
+  guiaVista: boolean
 
   init: () => Promise<void>
   irA: (v: Vista) => void
@@ -46,6 +51,10 @@ type Store = {
   deshacer: () => void
   rehacer: () => void
   restablecer: () => void
+  restablecerSeccion: (z: 'intro' | 'voz' | 'acapela' | 'sonido') => void
+  escucharZona: (z: Zona) => void
+  setAutoEscuchar: (v: boolean) => void
+  cerrarGuia: () => void
   moverRejilla: (delta: number) => void
   reiniciarRejilla: () => void
   render: () => void
@@ -63,6 +72,22 @@ let renderPendiente = false
 let ultimaClave = ''
 let ultimoCambio = 0
 let arrastrando = false
+let zonaPendiente: Zona | null = null
+
+const leerLS = (k: string, def: string): string => {
+  try {
+    return localStorage.getItem(k) ?? def
+  } catch {
+    return def
+  }
+}
+const guardarLS = (k: string, v: string): void => {
+  try {
+    localStorage.setItem(k, v)
+  } catch {
+    /* sin almacenamiento */
+  }
+}
 
 /** Mientras se arrastra un marcador no se recalcula el audio; al soltar sí. */
 export function ponerArrastre(b: boolean): void {
@@ -104,6 +129,9 @@ export const useStore = create<Store>((set, get) => ({
   avisos: [],
   exportando: { activo: false, fraction: 0 },
   zoom: 0,
+  autoEscuchar: leerLS('alargo-auto', '1') === '1',
+  resalte: null,
+  guiaVista: leerLS('alargo-guia', '1') === '1',
 
   async init() {
     const api = window.api
@@ -115,6 +143,9 @@ export const useStore = create<Store>((set, get) => ({
       set((s) => {
         if (p.error === '__borrado__') return { proyectos: s.proyectos.filter((x) => x.id !== p.id) }
         const i = s.proyectos.findIndex((x) => x.id === p.id)
+        if (i >= 0 && s.proyectos[i].estado !== 'listo' && p.estado === 'listo') {
+          window.setTimeout(() => get().avisar(`«${p.titulo}» está lista para editar`, 'ok', { texto: 'Abrir', abrir: p.id }), 0)
+        }
         if (i < 0) return { proyectos: [p, ...s.proyectos] }
         const copia = s.proyectos.slice()
         copia[i] = { ...p }
@@ -228,6 +259,9 @@ export const useStore = create<Store>((set, get) => ({
     f(nueva)
     sanear(nueva, a.analisis)
     if (JSON.stringify(nueva) === JSON.stringify(a.edicion)) return
+    const cambioIntro = JSON.stringify([a.edicion.intro, a.edicion.song]) !== JSON.stringify([nueva.intro, nueva.song])
+    const cambioAcap = JSON.stringify(a.edicion.acapela) !== JSON.stringify(nueva.acapela)
+    zonaPendiente = cambioIntro ? 'intro' : cambioAcap ? 'acapela' : null
     const ahora = Date.now()
     const fusionar = !!clave && clave === ultimaClave && ahora - ultimoCambio < 900
     ultimaClave = clave ?? ''
@@ -272,6 +306,47 @@ export const useStore = create<Store>((set, get) => ({
     temporizadorRender = window.setTimeout(() => get().render(), 80)
   },
 
+  restablecerSeccion(z) {
+    const a = get().abierto
+    if (!a) return
+    const sug = a.sugerencia
+    get().cambiar((e) => {
+      if (z === 'intro') e.intro = { ...sug.intro, start_s: e.intro.start_s }
+      if (z === 'voz') {
+        e.intro.start_s = sug.intro.start_s
+        e.song.start_s = sug.song.start_s
+      }
+      if (z === 'acapela') e.acapela = { ...sug.acapela }
+      if (z === 'sonido') {
+        e.crossfade_ms = sug.crossfade_ms
+        e.end_fade_ms = sug.end_fade_ms
+        e.master = { ...sug.master }
+      }
+    })
+  },
+
+  escucharZona(z) {
+    const info = get().preview.info
+    if (!info) return
+    const seg = info.segmentos.find((s) => (z === 'intro' ? s.tipo === 'cancion' : s.tipo === 'acapela'))
+    if (!seg) {
+      if (z === 'intro') audio.tramo(0, Math.min(10, info.duracion_s))
+      return
+    }
+    if (z === 'intro') audio.tramo(Math.max(0, seg.ini - 5), seg.ini + 6)
+    else audio.tramo(Math.max(0, seg.ini - 4), seg.ini + 8)
+  },
+
+  setAutoEscuchar(v) {
+    guardarLS('alargo-auto', v ? '1' : '0')
+    set({ autoEscuchar: v })
+  },
+
+  cerrarGuia() {
+    guardarLS('alargo-guia', '0')
+    set({ guiaVista: false })
+  },
+
   moverRejilla(delta) {
     const a = get().abierto
     if (!a) return
@@ -304,8 +379,15 @@ export const useStore = create<Store>((set, get) => ({
       .render(a.id, edicion)
       .then((info: InfoRender) => {
         if (get().abierto?.id !== a.id) return
+        const quedabaSonando = audio.sonando
         audio.cargarResultado(info.url)
         set({ preview: { info, picos: decodificarPicos(info.picos), renderizando: false, error: null } })
+        if (zonaPendiente) {
+          const z = zonaPendiente
+          zonaPendiente = null
+          set({ resalte: { zona: z, hasta: Date.now() + 2200 } })
+          if (get().autoEscuchar && !quedabaSonando && !arrastrando) get().escucharZona(z)
+        }
       })
       .catch((e: Error) => {
         set((s) => ({ preview: { ...s.preview, renderizando: false, error: e.message.replace(/^Error invoking remote method '[^']+': Error: /, '') } }))

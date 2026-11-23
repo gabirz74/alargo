@@ -6,13 +6,13 @@ import { barK, barNumber, barTime, clamp, fmt, snapBar, T4 } from './util'
 
 const PADL = 16
 const RULER = 26
-const A_Y = RULER
+const A_Y = RULER + 28
 const A_H = 132
-const B_Y = A_Y + A_H + 30
+const B_Y = A_Y + A_H + 36
 const B_H = 100
-const TOTAL = B_Y + B_H + 26
+const TOTAL = B_Y + B_H + 6
 
-type Hit = { tipo: 'R' | 'intro' | 'ac' | 'acFin'; x0: number; x1: number; y0: number; y1: number }
+type Hit = { tipo: 'R' | 'intro' | 'ac' | 'acFin' | 'playA' | 'playB'; x0: number; x1: number; y0: number; y1: number }
 type Colores = Record<'surface' | 'sunken' | 'ink' | 'soft' | 'faint' | 'line' | 'accent' | 'graphite' | 'inst', string>
 
 let cacheColores: { tema: string; c: Colores } | null = null
@@ -104,6 +104,16 @@ export function Timeline(): JSX.Element {
     return () => ro.disconnect()
   }, [])
 
+  useEffect(() => {
+    const h = (): void => {
+      sucio.current = true
+    }
+    const els = [audio.resultado, audio.original]
+    const evs = ['play', 'pause', 'ended', 'seeked']
+    els.forEach((a) => evs.forEach((ev) => a.addEventListener(ev, h)))
+    return () => els.forEach((a) => evs.forEach((ev) => a.removeEventListener(ev, h)))
+  }, [])
+
   // ------------------------------------------------------------------ dibujo
   useEffect(() => {
     let raf = 0
@@ -134,6 +144,47 @@ export function Timeline(): JSX.Element {
     raf = requestAnimationFrame(bucle)
     return () => cancelAnimationFrame(raf)
   }, [])
+
+  function titulo(ctx: CanvasRenderingContext2D, C: Colores, ancho: number, y: number, nombre: string, sub: string, modo: 'original' | 'resultado', lista: Hit[]): void {
+    const activo = audio.modo === modo
+    const sonando = activo && audio.sonando
+    const cx = PADL + 10
+    ctx.beginPath()
+    ctx.arc(cx, y, 10, 0, Math.PI * 2)
+    ctx.fillStyle = activo ? C.accent : C.sunken
+    ctx.fill()
+    ctx.fillStyle = activo ? C.surface : C.soft
+    if (sonando) {
+      ctx.fillRect(cx - 4, y - 4, 2.6, 8)
+      ctx.fillRect(cx + 1.4, y - 4, 2.6, 8)
+    } else {
+      ctx.beginPath()
+      ctx.moveTo(cx - 3, y - 5)
+      ctx.lineTo(cx + 5, y)
+      ctx.lineTo(cx - 3, y + 5)
+      ctx.closePath()
+      ctx.fill()
+    }
+    lista.push({ tipo: modo === 'original' ? 'playA' : 'playB', x0: cx - 12, x1: cx + 12, y0: y - 12, y1: y + 12 })
+    ctx.textBaseline = 'middle'
+    ctx.font = '600 13px "Bricolage Grotesque Variable", system-ui, sans-serif'
+    ctx.fillStyle = C.ink
+    ctx.fillText(nombre, cx + 18, y)
+    const w = ctx.measureText(nombre).width
+    ctx.font = '500 12px "Bricolage Grotesque Variable", system-ui, sans-serif'
+    ctx.fillStyle = C.faint
+    ctx.fillText('· ' + sub, cx + 18 + w + 8, y)
+    if (sonando) {
+      const txt = 'Escuchando esto'
+      const tw = ctx.measureText(txt).width + 18
+      ctx.fillStyle = C.accent
+      ctx.beginPath()
+      ctx.roundRect(ancho - tw - 4, y - 10, tw, 20, 10)
+      ctx.fill()
+      ctx.fillStyle = C.surface
+      ctx.fillText(txt, ancho - tw + 5, y)
+    }
+  }
 
   function pintar(ctx: CanvasRenderingContext2D, ancho: number, z: number, scroll: number, ab: NonNullable<typeof abierto>, pv: typeof preview, lista: Hit[]): void {
     const C = colores()
@@ -272,9 +323,8 @@ export function Timeline(): JSX.Element {
       lista.unshift({ tipo: 'R', x0: x - 7, x1: x + 7, y0: A_Y + 26, y1: A_Y + A_H })
     }
     ctx.restore()
-    // nombre del carril (fijo)
-    ctx.fillStyle = C.soft
-    ctx.fillText('Canción original', PADL, A_Y + A_H + 15)
+    // título del carril (fijo) con su botón de reproducir
+    titulo(ctx, C, ancho, A_Y - 15, 'Canción original', 'aquí eliges qué trozos usar', 'original', lista)
     // cursor del original
     if (audio.modo === 'original') {
       const x = X(audio.tiempo)
@@ -302,6 +352,16 @@ export function Timeline(): JSX.Element {
         ctx.globalAlpha = s.tipo === 'cancion' ? 0.05 : 0.1
         ctx.fillRect(x0, B_Y, x1 - x0, B_H)
         ctx.globalAlpha = 1
+        const rs = useStore.getState().resalte
+        if (rs && Date.now() < rs.hasta && ((rs.zona === 'intro' && s.tipo === 'intro') || (rs.zona === 'acapela' && s.tipo === 'acapela'))) {
+          ctx.strokeStyle = C.accent
+          ctx.lineWidth = 3
+          ctx.globalAlpha = Math.min(1, (rs.hasta - Date.now()) / 900)
+          ctx.strokeRect(x0 + 1.5, B_Y + 1.5, x1 - x0 - 3, B_H - 3)
+          ctx.globalAlpha = 1
+          ctx.lineWidth = 1
+          sucio.current = true
+        }
         // trozo de onda de este segmento
         ctx.save()
         ctx.beginPath()
@@ -333,8 +393,7 @@ export function Timeline(): JSX.Element {
       ctx.fillText(pv.error ? pv.error : 'Preparando la previsualización…', PADL + 4, B_Y + B_H / 2)
     }
     ctx.restore()
-    ctx.fillStyle = C.soft
-    ctx.fillText(info ? `Tu extended · ${fmt(info.duracion_s)}` : 'Tu extended', PADL, B_Y + B_H + 15)
+    titulo(ctx, C, ancho, B_Y - 15, 'Tu extended', info ? `el resultado que se exporta · dura ${fmt(info.duracion_s)}` : 'el resultado que se exporta', 'resultado', lista)
     if (audio.modo === 'resultado') {
       const x = X(audio.tiempo)
       ctx.fillStyle = C.ink
@@ -363,6 +422,16 @@ export function Timeline(): JSX.Element {
     const h = hitEn(x, y)
     const t = tiempoDe(ev.clientX)
     const e = abierto.edicion
+    if (h && (h.tipo === 'playA' || h.tipo === 'playB')) {
+      const modo = h.tipo === 'playA' ? 'original' : 'resultado'
+      if (audio.modo === modo) audio.alternar()
+      else {
+        audio.usar(modo)
+        void audio.activo.play().catch(() => {})
+      }
+      sucio.current = true
+      return
+    }
     if (h) {
       ev.currentTarget.setPointerCapture(ev.pointerId)
       const ref = h.tipo === 'R' ? e.song.start_s : h.tipo === 'intro' ? e.intro.start_s : h.tipo === 'ac' ? (e.acapela.start_s ?? 0) : (e.acapela.start_s ?? 0)
@@ -389,7 +458,7 @@ export function Timeline(): JSX.Element {
     const d = arrastre.current
     if (!d) {
       const h = hitEn(x, y)
-      setCursor(h ? (h.tipo === 'R' || h.tipo === 'acFin' ? 'ew-resize' : 'grab') : y >= A_Y && y <= B_Y + B_H ? 'pointer' : 'default')
+      setCursor(h ? (h.tipo === 'R' || h.tipo === 'acFin' ? 'ew-resize' : h.tipo === 'playA' || h.tipo === 'playB' ? 'pointer' : 'grab') : y >= A_Y && y <= B_Y + B_H ? 'pointer' : 'default')
       return
     }
     const t = tiempoDe(ev.clientX)
