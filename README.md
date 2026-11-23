@@ -20,8 +20,10 @@ Funciona en **macOS** (Apple Silicon e Intel) y **Windows 10/11**.
 | Zona | Controles |
 | --- | --- |
 | Intro | activar/desactivar · sonido (instrumental completo, solo batería, batería y bajo) · duración (4–16 compases) · bucle de 1/2/4 compases · trozo que suena (arrastrable, elegido con el ratón o entre las melodías que más se repiten) · mezcla por capas (batería, bajo, melodía y voz de adelanto de partes distintas) · volumen automático o manual · entrada suave · compás extra automático o manual |
-| Entrada de la voz | dónde retoma la canción (arrastrable) · ajuste fino de ±10 ms y ±1 tiempo · entradas de voz detectadas |
+| Entrada de la canción | dónde retoma la canción (arrastrable) · ajuste fino de ±10 ms y ±1 tiempo · entradas de voz detectadas |
+| Cortar partes | quitar los trozos que no te interesen o los huecos sin sonido (se marcan con el ratón, pegados a los tiempos, o con un clic en los huecos detectados) |
 | Acapela final | activar/desactivar · posición (arrastrable, de compás en compás) · estribillos detectados · duración (4/8/16/32 compases) · volumen · cuánto tarda en apagarse el instrumental · fundido final |
+| Rejilla | los tiempos (kicks) se ven en rojo sobre la onda, con el primer tiempo de cada compás más grueso |
 | Ritmo | tempo detectado · afinado de la rejilla en milisegundos · desplazar la rejilla un tiempo |
 | Efectos de DJ | estilos Sin efectos / Suave / Intenso / Épico (reggaetón y club) y cada efecto por separado. Entrada: filtro que se abre, crescendo, bombo extra, bombeo, subida de ruido, platillo invertido, sirena, tartamudeo, freno de vinilo, silencio antes de la voz, redoble de caja, golpe de entrada, caída de graves, bocina de aire, más batería. Salida: eco, reverb, filtro que se cierra, batería de fondo, voz cortada al ritmo, freno de vinilo, golpe final |
 | Sonido | fundido en las uniones (0–100 ms) · limitador suave |

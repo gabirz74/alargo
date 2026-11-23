@@ -25,6 +25,12 @@ EDICION_BASE = {
         "level_cap_db": 5.0,
         "gain_db": 0.0,
         "fade_in_ms": 0.0,
+        "enlace": {                # cómo se une el final de la intro con la entrada de la canción
+            "tipo": "corte",       # corte | solapar (la intro se desvanece por debajo de la canción)
+            "ms": 1500,
+            "cola": False,         # cola de reverb de la última nota de la intro
+            "cola_seg": 1.8,
+        },
         "fuente_s": None,          # de dónde se toma el audio de la intro (None = el mismo compás donde entra la frase)
         "capas": {                 # mezclador: cada capa puede salir de un trozo distinto de la canción
             "on": False,
@@ -46,6 +52,7 @@ EDICION_BASE = {
         "inst_fade_ms": 120.0,     # el instrumental se apaga en este tiempo al entrar la acapela
         "tail_fade_ms": 80.0,      # fundido del final
     },
+    "cortes": [],                  # trozos de la canción que se quitan: [{"ini_s": .., "fin_s": ..}]
     "crossfade_ms": 6.0,
     "end_fade_ms": 0.0,            # fundido final cuando no hay acapela
     "master": {"limiter": True},
@@ -78,6 +85,18 @@ def normalizar_edicion(ed):
     if ac["start_s"] is None:
         ac["enabled"] = False
     ed["crossfade_ms"] = float(min(200.0, max(0.0, ed["crossfade_ms"])))
+    if it["enlace"]["tipo"] not in ("corte", "solapar"):
+        it["enlace"]["tipo"] = "corte"
+    it["enlace"]["ms"] = int(min(6000, max(100, it["enlace"]["ms"])))
+    cs = sorted(({"ini_s": float(c["ini_s"]), "fin_s": float(c["fin_s"])} for c in (ed.get("cortes") or []) if float(c["fin_s"]) - float(c["ini_s"]) > 0.02),
+                key=lambda c: c["ini_s"])
+    fus = []
+    for c in cs:
+        if fus and c["ini_s"] <= fus[-1]["fin_s"] + 0.01:
+            fus[-1]["fin_s"] = max(fus[-1]["fin_s"], c["fin_s"])
+        else:
+            fus.append(c)
+    ed["cortes"] = fus
     return ed
 
 
@@ -143,6 +162,9 @@ def render(S, an, ed):
     pico_ref = float(np.percentile(np.abs(original[::8]), 99.5)) + 1e-6
     if it["enabled"]:
         td = float(it["start_s"])                 # compás donde arranca la frase en la canción (el «golpe» de entrada)
+        if R - td < -2.6 * T4 or R - td > 0.6 * T4:
+            # la entrada se ha movido lejos del golpe guardado: el golpe pasa a ser el tiempo más cercano a la entrada
+            td = g["t0"] + round((R - g["t0"]) / T) * T
         fs = float(it["fuente_s"]) if it.get("fuente_s") is not None else td   # de dónde se toma el audio de la intro
         N = it["bars"]
         pre, post = it["extra_pre"], it["extra_post"]
@@ -156,6 +178,12 @@ def render(S, an, ed):
                 pre, post = 0, 1
         ts = fs - pre * T4
         L += (pre + post) * T4
+        if L < 1.0:
+            raise ValueError("La intro queda vacía: la entrada de la canción está demasiado cerca del inicio del bloque. Sube la duración de la intro o mueve la entrada.")
+        if fs + (N + pre + post) * T4 > dur + 0.5:
+            avisos.append("trozo_se_sale")
+        enl = it["enlace"]
+        cola_s = enl["ms"] / 1000 if enl["tipo"] == "solapar" else 0.0
         capas = it["capas"]
         usa_capas = bool(capas["on"])
         src = fuente(S, it["source"])
@@ -195,7 +223,7 @@ def render(S, an, ed):
                 buf[a:a + n] += seg[:n]
             intro = buf[: int(round(L * SR)) + xf]
         else:
-            intro = tomar(ts, ts + L + xf_s)
+            intro = tomar(ts, ts + L + xf_s + cola_s)
         fxi = ed["fx"]["intro"]
         if fxi["bateria"]["on"] and not it["loop_bars"] and it["source"] != "drums" and not usa_capas:
             intro = intro + corte(S["drums"], ts, ts + L + xf_s) * efectos._db(fxi["bateria"]["nivel_db"])
@@ -233,18 +261,67 @@ def render(S, an, ed):
             r = int(0.012 * SR)
             intro[nL - m:nL] *= 0.0
             intro[nL - m - r:nL - m] *= np.linspace(1, 0, r)[:, None]
+        cola_intro = None
+        if cola_s > 0 and len(intro) > nL + xf:
+            cola_intro = intro[nL + xf:].copy()
+            intro = intro[: nL + xf]
+            fade = np.cos(np.linspace(0, np.pi / 2, len(cola_intro)))[:, None] ** 2
+            cola_intro = (cola_intro * fade * 0.85).astype(np.float32)
         info["intro"] = dict(duracion_s=round(L, 3), tiempos=round(L / T, 1), extra_pre=pre, extra_post=post,
                              ganancia_db=round(20 * np.log10(max(gan, 1e-6)), 1))
         if L / T < 28 and not it["loop_bars"]:
             avisos.append("intro_corta")
 
-    # ---- cuerpo
-    cuerpo = corte(original, R, fin_cuerpo + (xf_s if hay_acapela else 0))
+    # ---- cuerpo (con los trozos que el usuario ha cortado)
+    ext = xf_s if hay_acapela else 0.0
+    cortes = [c for c in ed["cortes"] if c["fin_s"] > R + 0.2 and c["ini_s"] < fin_cuerpo - 0.2]
+    puntos = [(R, fin_cuerpo)]
+    if cortes:
+        puntos = []
+        a = R
+        for c in cortes:
+            ini, fin = max(c["ini_s"], R), min(c["fin_s"], fin_cuerpo)
+            if ini - a > 0.05:
+                puntos.append((a, ini))
+            a = max(a, fin)
+        if fin_cuerpo - a > 0.05:
+            puntos.append((a, fin_cuerpo))
+        if not puntos:
+            raise ValueError("Has cortado toda la canción")
+    cuerpo = None
+    quitado = 0.0
+    piezas = []        # (inicio en la canción, fin en la canción, inicio en el resultado relativo al cuerpo)
+    pos = 0.0
+    cortes_rel = []
+    for k, (a, b) in enumerate(puntos):
+        ultimo = k == len(puntos) - 1
+        seg = corte(original, a, b + (ext if ultimo else xf_s))
+        piezas.append((a, b, pos))
+        pos += b - a
+        if cuerpo is None:
+            cuerpo = seg
+        else:
+            cortes_rel.append(pos - (b - a))
+            cuerpo = unir(cuerpo, seg, xf)
+    quitado = (fin_cuerpo - R) - pos
 
     t_hit = None
     if intro is not None:
         out = unir(intro, cuerpo, xf)
         t_cuerpo = L
+        nLs = int(round(L * SR))
+        if cola_intro is not None:
+            a0 = nLs
+            m = min(len(cola_intro), len(out) - a0)
+            out[a0:a0 + m] += cola_intro[:m]
+        if enl["cola"]:
+            nb = int(T * SR)
+            x = intro[max(0, nLs - nb):nLs]
+            if len(x) > 1000:
+                rv = efectos.reverb(x, float(enl["cola_seg"]), 0.9)[len(x):]
+                rv = rv * 0.6
+                m = min(len(rv), len(out) - nLs)
+                out[nLs:nLs + m] += rv[:m]
         # ---- efectos que se superponen en el golpe de entrada (el compás donde empieza la frase cantada)
         t_hit = (N + pre + post) * T4
         i_hit = int(round(t_hit * SR))
@@ -280,7 +357,7 @@ def render(S, an, ed):
     else:
         out = cuerpo
         t_cuerpo = 0.0
-    t_ac = t_cuerpo + (fin_cuerpo - R)
+    t_ac = t_cuerpo + (fin_cuerpo - R) - quitado
 
     # ---- acapela
     t_fin = t_ac if not hay_acapela else None
@@ -358,12 +435,15 @@ def render(S, an, ed):
 
     segmentos = []
     if intro is not None:
-        segmentos.append(dict(tipo="intro", ini=0.0, fin=t_cuerpo, origen_ini=float(it["start_s"])))
-    segmentos.append(dict(tipo="cancion", ini=t_cuerpo, fin=t_ac, origen_ini=R))
+        segmentos.append(dict(tipo="intro", ini=0.0, fin=t_cuerpo, origen_ini=float(ts)))
+    for (a_, b_, p_) in piezas:
+        segmentos.append(dict(tipo="cancion", ini=t_cuerpo + p_, fin=t_cuerpo + p_ + (b_ - a_), origen_ini=a_))
     if hay_acapela:
         segmentos.append(dict(tipo="acapela", ini=t_ac, fin=t_fin, origen_ini=tc))
+    info["cortes_s"] = [round(t_cuerpo + c, 3) for c in cortes_rel]
     info.update(duracion_s=round(len(out) / SR, 3), segmentos=segmentos, avisos=avisos,
                 uniones=[round(x, 3) for x in ([t_cuerpo] if intro is not None else []) + ([t_ac] if hay_acapela else [])])
+    info["quitado_s"] = round(quitado, 3)
     return out.astype(np.float32), info
 
 

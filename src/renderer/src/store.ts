@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { audio } from './audio'
 import type { Ajustes, Analisis, Edicion, Efectos, EstadoMotor, InfoRender, Picos, Proyecto } from './types'
-import { clamp, decodificarPicos, snapBar } from './util'
+import { clamp, decodificarPicos, normalizarCortes, snapBar } from './util'
 
 type Abierto = {
   id: string
@@ -18,7 +18,7 @@ type Preview = { info: InfoRender | null; picos: Picos | null; renderizando: boo
 type Instalacion = { activa: boolean; fase: string; fraction: number; detalle?: string; error?: string }
 export type Aviso = { id: number; texto: string; tipo: 'ok' | 'error' | 'info'; accion?: { texto: string; ruta?: string; abrir?: string } }
 type Vista = 'biblioteca' | 'editor' | 'ajustes'
-export type Zona = 'intro' | 'acapela' | 'fin' | 'introTodo'
+export type Zona = 'intro' | 'acapela' | 'fin' | 'introTodo' | 'corte'
 export type Resalte = { zona: Zona; hasta: number } | null
 
 type Store = {
@@ -34,8 +34,12 @@ type Store = {
   exportando: { activo: boolean; fraction: number }
   zoom: number // píxeles por segundo; 0 = ajustar a la ventana
   fxPresets: Record<string, Efectos>
-  seleccionando: boolean
-  setSeleccionando: (v: boolean) => void
+  seleccionando: false | 'intro' | 'corte'
+  setSeleccionando: (v: false | 'intro' | 'corte') => void
+  moverEntrada: (nuevoR: number, clave?: string) => void
+  anadirCorte: (ini: number, fin: number) => void
+  quitarCorte: (i: number) => void
+  escucharCorte: (i: number) => void
   elegirTrozo: (startS: number | null) => void
   autoEscuchar: boolean
   resalte: Resalte
@@ -77,6 +81,7 @@ let ultimaClave = ''
 let ultimoCambio = 0
 let arrastrando = false
 let zonaPendiente: Zona | null = null
+let corteIdx = 0
 
 const leerLS = (k: string, def: string): string => {
   try {
@@ -119,6 +124,7 @@ function sanear(e: Edicion, an: Analisis): void {
   e.song.start_s = clamp(e.song.start_s, 0, dur - 2)
   if (e.acapela.start_s !== null) e.acapela.start_s = clamp(e.acapela.start_s, 1, dur - 1)
   e.acapela.bars = clamp(Math.round(e.acapela.bars), 1, 64)
+  e.cortes = e.cortes ?? []
   e.intro.bars = clamp(Math.round(e.intro.bars), 1, 32)
 }
 
@@ -272,7 +278,8 @@ export const useStore = create<Store>((set, get) => ({
     const cambioFxIntro = JSON.stringify(a.edicion.fx?.intro) !== JSON.stringify(nueva.fx?.intro)
     const cambioFxSalida = JSON.stringify(a.edicion.fx?.salida) !== JSON.stringify(nueva.fx?.salida)
     const cambioFuente = JSON.stringify([a.edicion.intro.fuente_s, a.edicion.intro.capas]) !== JSON.stringify([nueva.intro.fuente_s, nueva.intro.capas])
-    zonaPendiente = cambioFuente ? 'introTodo' : cambioIntro || cambioFxIntro ? 'intro' : cambioAcap ? 'acapela' : cambioFxSalida ? 'fin' : null
+    const cambioCortes = JSON.stringify(a.edicion.cortes) !== JSON.stringify(nueva.cortes)
+    zonaPendiente = cambioCortes ? 'corte' : cambioFuente ? 'introTodo' : cambioIntro || cambioFxIntro ? 'intro' : cambioAcap ? 'acapela' : cambioFxSalida ? 'fin' : null
     const ahora = Date.now()
     const fusionar = !!clave && clave === ultimaClave && ahora - ultimoCambio < 900
     ultimaClave = clave ?? ''
@@ -340,6 +347,11 @@ export const useStore = create<Store>((set, get) => ({
   escucharZona(z) {
     const info = get().preview.info
     if (!info) return
+    if (z === 'corte') {
+      const t = info.cortes_s?.[corteIdx]
+      if (t !== undefined) audio.tramo(Math.max(0, t - 4), t + 5)
+      return
+    }
     if (z === 'introTodo') {
       const sg = info.segmentos.find((x) => x.tipo === 'cancion')
       audio.tramo(0, Math.min(info.duracion_s, (sg?.ini ?? 12) + 3))
@@ -359,6 +371,39 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   setSeleccionando: (v) => set({ seleccionando: v }),
+
+  moverEntrada(nuevoR, clave) {
+    const a = get().abierto
+    if (!a) return
+    const T = a.analisis.grid.T
+    get().cambiar((e) => {
+      const d = nuevoR - e.song.start_s
+      e.intro.start_s += Math.round(d / T) * T   // el golpe acompaña a la entrada, para que la intro no cambie de longitud
+      e.song.start_s = nuevoR
+    }, clave)
+  },
+
+  anadirCorte(ini, fin) {
+    if (fin - ini < 0.05) return
+    get().cambiar((e) => {
+      const lista = normalizarCortes([...(e.cortes ?? []), { ini_s: ini, fin_s: fin }])
+      e.cortes = lista
+      corteIdx = Math.max(0, lista.findIndex((c) => ini >= c.ini_s - 0.02 && ini <= c.fin_s + 0.02))
+    })
+  },
+
+  quitarCorte(i) {
+    get().cambiar((e) => {
+      const l = (e.cortes ?? []).slice()
+      l.splice(i, 1)
+      e.cortes = l
+    })
+  },
+
+  escucharCorte(i) {
+    const t = get().preview.info?.cortes_s?.[i]
+    if (t !== undefined) audio.tramo(Math.max(0, t - 4), t + 5)
+  },
 
   elegirTrozo(startS) {
     get().cambiar((e) => {

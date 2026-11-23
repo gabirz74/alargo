@@ -15,6 +15,7 @@
   --graphite: #2b2e37;
   --inst: #aab0bc;
   --danger: #d23b3b;
+  --kick: #e5484d;
   --ok: #1f9d68;
   color-scheme: light;
 }
@@ -32,6 +33,7 @@
   --graphite: #c9cdd8;
   --inst: #4b5262;
   --danger: #ff7a7a;
+  --kick: #ff5a5f;
   --ok: #4bd19a;
   color-scheme: dark;
 }

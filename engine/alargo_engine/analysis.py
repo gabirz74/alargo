@@ -143,7 +143,7 @@ def analizar(proj, entrada, calidad, prog, pistas_listas=None):
         j0=j0, n_bar=n_bar, F=np.round(F, 2).tolist(), activo=[bool(a) for a in activo],
         fase=dict(global_=fase0, inicio=fase_ini, final=fase_fin),
         entradas_voz=[[round(t, 3), round(min(g, 9.0), 2)] for t, g in entradas],
-        alternativas=dict(intro=otras_intro, acapela=otras_acap), melodias=melodias,
+        alternativas=dict(intro=otras_intro, acapela=otras_acap), melodias=melodias, silencios=dsp.detectar_silencios(S["original"]),
         info_sugerencia=dict(intro=info_in, estribillo=info_fin),
         calidad=calidad, ajuste=dict(lag_muestras=int(lag_r), ganancias=g_r),
     )

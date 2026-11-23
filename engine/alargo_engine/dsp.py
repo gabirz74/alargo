@@ -368,3 +368,30 @@ def candidatos_melodia(melodia, grid, j0, n_bar, F, fase, maximo=6):
         if len(out) >= maximo:
             break
     return out
+
+
+def detectar_silencios(x, minimo_s=0.25, umbral_db=-50.0):
+    """Huecos sin sonido dentro de la canción (ignora el silencio inicial y final): [{ini_s, fin_s}]."""
+    y = x.mean(1)
+    hop = 512
+    rms = librosa.feature.rms(y=y, frame_length=1024, hop_length=hop)[0]
+    d = 20 * np.log10(rms + 1e-9)
+    mudo = d < umbral_db
+    t = librosa.frames_to_time(np.arange(len(mudo)), sr=SR, hop_length=hop)
+    activos = np.where(~mudo)[0]
+    if len(activos) == 0:
+        return []
+    primero, ultimo = activos[0], activos[-1]
+    out = []
+    i = primero
+    while i <= ultimo:
+        if mudo[i]:
+            j = i
+            while j <= ultimo and mudo[j]:
+                j += 1
+            if t[min(j, len(t) - 1)] - t[i] >= minimo_s:
+                out.append(dict(ini_s=round(float(t[i]), 3), fin_s=round(float(t[min(j, len(t) - 1)]), 3)))
+            i = j
+        else:
+            i += 1
+    return out

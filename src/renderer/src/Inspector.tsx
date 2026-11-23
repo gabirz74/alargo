@@ -2,7 +2,7 @@ import { useStore } from './store'
 import type { Fuente } from './types'
 import { Ajuste, Btn, Chip, Deslizador, Fila, Interruptor, Segmentado, Seccion } from './ui'
 import type { Capa, Efectos } from './types'
-import { barK, barNumber, barTime, fmt, T4 } from './util'
+import { barK, barNumber, barTime, fmt, normalizarCortes, T4 } from './util'
 
 const sgn = (v: number, d = 1): string => (v > 0 ? '+' : '') + v.toFixed(d).replace('.', ',')
 
@@ -92,6 +92,10 @@ export function Inspector(): JSX.Element | null {
   const seleccionando = useStore((s) => s.seleccionando)
   const setSeleccionando = useStore((s) => s.setSeleccionando)
   const elegirTrozo = useStore((s) => s.elegirTrozo)
+  const moverEntrada = useStore((s) => s.moverEntrada)
+  const anadirCorte = useStore((s) => s.anadirCorte)
+  const quitarCorte = useStore((s) => s.quitarCorte)
+  const escucharCorte = useStore((s) => s.escucharCorte)
   const guardarAjustes = useStore((s) => s.guardarAjustes)
   if (!ab) return null
   const { edicion: e, analisis: an } = ab
@@ -108,12 +112,12 @@ export function Inspector(): JSX.Element | null {
   const fuenteIntro = e.intro.fuente_s ?? e.intro.start_s
   const kFuente = barK(an, fuenteIntro)
   const anacrusa = (it.start_s - e.song.start_s) / T
-  const cercanas = an.entradas_voz.filter(([t, gap]) => t > it.start_s - 3.5 * t4 && t < it.start_s + t4 && gap >= 0.1).slice(0, 6)
+  const cercanas = an.entradas_voz.filter(([t, gap]) => t > e.song.start_s - 3 * t4 && t < e.song.start_s + 3 * t4 && gap >= 0.1).slice(0, 6)
   const kAc = ac.start_s !== null ? barK(an, ac.start_s) : 0
 
   return (
     <div>
-      <Seccion titulo="Intro" abierta descripcion="Un tramo instrumental con ritmo antes de que entre la canción, para poder mezclarla. El bloque gris de la pista de arriba es el trozo que se usa." resumen={it.enabled ? `${it.bars} compases` : 'Apagada'} derecha={<Interruptor etiqueta="Intro" valor={it.enabled} onChange={(v) => cambiar((x) => void (x.intro.enabled = v))} />}>
+      <Seccion titulo="Intro" descripcion="Un tramo instrumental con ritmo antes de que entre la canción, para poder mezclarla. El bloque gris de la pista de arriba es el trozo que se usa." resumen={it.enabled ? `${it.bars} compases` : 'Apagada'} derecha={<Interruptor etiqueta="Intro" valor={it.enabled} onChange={(v) => cambiar((x) => void (x.intro.enabled = v))} />}>
         {it.enabled && (
           <>
             <Acciones onEscuchar={() => escuchar('intro')} onRestablecer={() => restablecerSeccion('intro')} />
@@ -152,12 +156,12 @@ export function Inspector(): JSX.Element | null {
         {!it.enabled && <p className="text-[12px] text-faint">Sin intro, el extended empieza donde retoma la canción.</p>}
       </Seccion>
 
-      <Seccion titulo="Qué suena en la intro" abierta resumen={e.intro.capas.on ? 'Por capas' : e.intro.fuente_s !== null ? `Trozo elegido (compás ${barNumber(an, barK(an, e.intro.fuente_s))})` : 'Propuesta de la IA'}
+      <Seccion titulo="Qué suena en la intro" resumen={e.intro.capas.on ? 'Por capas' : e.intro.fuente_s !== null ? `Trozo elegido (compás ${barNumber(an, barK(an, e.intro.fuente_s))})` : 'Propuesta de la IA'}
         descripcion="La IA elige el trozo que usa de intro, pero la melodía que más te gusta puede estar en otra parte. Elige tú qué compases suenan al principio, o mezcla la batería, el bajo y la melodía de partes distintas.">
         <div className="mb-3 flex flex-wrap gap-2">
           <Btn tam="sm" icono="play" onClick={() => escuchar('introTodo')} titulo="Escucha la intro desde el principio">Escuchar la intro entera</Btn>
-          <Btn tam="sm" variante={seleccionando ? 'primario' : 'suave'} onClick={() => setSeleccionando(!seleccionando)} titulo="Arrastra sobre la canción de arriba para marcar el trozo">
-            {seleccionando ? 'Arrastra sobre la canción…' : 'Elegir con el ratón'}
+          <Btn tam="sm" variante={seleccionando === 'intro' ? 'primario' : 'suave'} onClick={() => setSeleccionando(seleccionando === 'intro' ? false : 'intro')} titulo="Arrastra sobre la canción de arriba para marcar el trozo">
+            {seleccionando === 'intro' ? 'Arrastra sobre la canción…' : 'Elegir con el ratón'}
           </Btn>
           {e.intro.fuente_s !== null && <Btn tam="sm" variante="fantasma" icono="repetir" onClick={() => elegirTrozo(null)}>Volver al de la IA</Btn>}
         </div>
@@ -176,6 +180,19 @@ export function Inspector(): JSX.Element | null {
             </div>
           </div>
         )}
+        <div className="mt-4 border-t border-line pt-3">
+          <div className="text-[13px] font-medium">Enlace con la canción</div>
+          <p className="mb-2 text-[12px] leading-snug text-faint">Cómo pasa la intro a la canción. Si la melodía de la intro no encaja con el principio de la canción, haz que se desvanezca por debajo o ponle una cola de reverb.</p>
+          <Fila apilada etiqueta="Forma de unirse">
+            <Segmentado valor={it.enlace.tipo} opciones={[{ v: 'corte', t: 'Corte limpio', titulo: 'La intro acaba y entra la canción' }, { v: 'solapar', t: 'Se desvanece debajo', titulo: 'La melodía de la intro sigue sonando un poco bajo la canción' }]} onChange={(v) => cambiar((x) => void (x.intro.enlace.tipo = v))} />
+          </Fila>
+          {it.enlace.tipo === 'solapar' && (
+            <Deslizador etiqueta="Tarda en desvanecerse" valor={it.enlace.ms} min={200} max={4000} paso={100} formato={(v) => `${(v / 1000).toFixed(1).replace('.', ',')} s`} onChange={(v) => cambiar((x) => void (x.intro.enlace.ms = v), 'enl1')} />
+          )}
+          <Fila etiqueta="Cola de reverb" ayuda="La última nota de la intro se alarga como un eco suave.">
+            <Interruptor etiqueta="Cola de reverb" valor={it.enlace.cola} onChange={(v) => cambiar((x) => void (x.intro.enlace.cola = v))} />
+          </Fila>
+        </div>
         <div className="mt-4 border-t border-line pt-3">
           <Fila etiqueta="Mezclar por capas" ayuda="Elige la batería, el bajo, la melodía y hasta un trocito de voz de partes distintas.">
             <Interruptor etiqueta="Mezclar por capas" valor={e.intro.capas.on} onChange={(v) => cambiar((x) => void (x.intro.capas.on = v))} />
@@ -196,31 +213,87 @@ export function Inspector(): JSX.Element | null {
         </div>
       </Seccion>
 
-      <Seccion titulo="Entrada de la voz" abierta descripcion="Dónde retoma la canción tras la intro. La voz suele empezar un poco antes del compás (anacrusa); la IA lo detecta, tú puedes afinarlo." resumen={fmt(e.song.start_s, true)}>
+      <Seccion titulo="Entrada de la canción" descripcion="Dónde empieza a sonar la canción real después de la intro. La voz suele empezar un poco antes del compás (anacrusa): la IA lo detecta y tú puedes afinarlo. Esto es independiente de qué suena en la intro." resumen={fmt(e.song.start_s, true)}>
         <Acciones onEscuchar={() => escuchar('intro')} onRestablecer={() => restablecerSeccion('voz')} />
         <div>
-          <p className="mb-2 text-[12px] leading-snug text-faint">
-            La canción retoma {anacrusa > 0.05 ? `${anacrusa.toFixed(1).replace('.', ',')} tiempos antes` : anacrusa < -0.05 ? `${Math.abs(anacrusa).toFixed(1).replace('.', ',')} tiempos después` : 'justo en'} del inicio del bloque. También puedes arrastrar la línea «Entra la voz» en la pista de arriba.
-          </p>
+          <div className="text-[13px] font-medium">Dónde entra</div>
+          <p className="mb-2 text-[12px] leading-snug text-faint">También puedes arrastrar la línea «Entra la voz» en la pista de arriba. Al moverla, la intro conserva su duración.</p>
           <Ajuste
             pasos={[{ t: '−1 t', d: -T }, { t: '−10 ms', d: -0.01 }, { t: '+10 ms', d: 0.01 }, { t: '+1 t', d: T }]}
-            onPaso={(d) => cambiar((x) => void (x.song.start_s += d), 'voz')}
+            onPaso={(d) => moverEntrada(e.song.start_s + d, 'voz')}
             texto={fmt(e.song.start_s, true)}
           />
           {cercanas.length > 0 && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <span className="text-[12px] text-faint">Entradas detectadas</span>
               {cercanas.map(([t]) => (
-                <Chip key={t} activo={Math.abs(e.song.start_s - (t - 0.015)) < 0.02} onClick={() => cambiar((x) => void (x.song.start_s = t - 0.015))}>
+                <Chip key={t} activo={Math.abs(e.song.start_s - (t - 0.015)) < 0.02} onClick={() => moverEntrada(t - 0.015)}>
                   {fmt(t, true)}
                 </Chip>
               ))}
             </div>
           )}
+          {an.entradas_voz.length > cercanas.length && (
+            <details className="mt-2 text-[12px] text-faint">
+              <summary className="cursor-pointer">Todas las entradas de voz</summary>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {an.entradas_voz.filter(([, g]) => g >= 0.25).slice(0, 24).map(([t]) => (
+                  <Chip key={t} activo={Math.abs(e.song.start_s - (t - 0.015)) < 0.02} onClick={() => moverEntrada(t - 0.015)}>{fmt(t, true)}</Chip>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+        <div className="mt-3 border-t border-line pt-3">
+          <div className="text-[13px] font-medium">Anacrusa</div>
+          <p className="mb-2 text-[12px] leading-snug text-faint">
+            La voz entra {anacrusa > 0.05 ? `${anacrusa.toFixed(1).replace('.', ',')} tiempos antes` : anacrusa < -0.05 ? `${Math.abs(anacrusa).toFixed(1).replace('.', ',')} tiempos después` : 'justo en'} del golpe de la frase. Cambiarlo alarga o acorta la intro en tiempos enteros.
+          </p>
+          <Ajuste pasos={[{ t: '−1 t', d: -T }, { t: '+1 t', d: T }]} onPaso={(d) => cambiar((x) => void (x.intro.start_s += d), 'anacrusa')} />
         </div>
       </Seccion>
 
-      <Seccion titulo="Acapela final" abierta descripcion="El final de tu extended: solo la voz de un estribillo, sin instrumental. El bloque azul de la pista de arriba es el trozo que se usa." resumen={ac.enabled ? `${ac.bars} compases` : 'Apagada'} derecha={<Interruptor etiqueta="Acapela final" valor={ac.enabled} onChange={(v) => cambiar((x) => {
+      <Seccion titulo="Cortar partes" resumen={(e.cortes ?? []).length ? `${(e.cortes ?? []).length} cortes` : 'Sin cortes'} descripcion="Quita de la canción los trozos que no te interesen o los huecos sin sonido. Marca el trozo con el ratón en la pista de arriba (se pega a los tiempos) y desaparece del resultado.">
+        <div className="mb-3 flex flex-wrap gap-2">
+          <Btn tam="sm" variante={seleccionando === 'corte' ? 'primario' : 'suave'} onClick={() => setSeleccionando(seleccionando === 'corte' ? false : 'corte')} titulo="Arrastra sobre la canción de arriba para marcar lo que quieres quitar">
+            {seleccionando === 'corte' ? 'Arrastra sobre la canción…' : 'Cortar con el ratón'}
+          </Btn>
+          {(e.cortes ?? []).length > 0 && <Btn tam="sm" variante="fantasma" onClick={() => cambiar((x) => void (x.cortes = []))}>Quitar todos los cortes</Btn>}
+        </div>
+        {(e.cortes ?? []).length === 0 ? (
+          <p className="text-[12px] leading-snug text-faint">Todavía no has cortado nada. También puedes pulsar la × de un trozo marcado para deshacer ese corte.</p>
+        ) : (
+          <ul className="mb-3">
+            {(e.cortes ?? []).map((c, i) => (
+              <li key={`${c.ini_s}`} className="flex items-center justify-between gap-2 border-t border-line py-2 text-[13px] first:border-0">
+                <span className="num">{fmt(c.ini_s, true)} – {fmt(c.fin_s, true)} <span className="text-faint">· {(c.fin_s - c.ini_s).toFixed(1).replace('.', ',')} s</span></span>
+                <span className="flex gap-1">
+                  <Btn tam="sm" icono="play" titulo="Escuchar cómo queda el empalme" onClick={() => escucharCorte(i)}>Oír</Btn>
+                  <Btn tam="sm" variante="fantasma" onClick={() => quitarCorte(i)}>Quitar corte</Btn>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {(an.silencios?.length ?? 0) > 0 && (
+          <div className="border-t border-line pt-3">
+            <div className="text-[13px] font-medium">Huecos sin sonido detectados</div>
+            <p className="mb-2 text-[12px] leading-snug text-faint">Pausas de más de un cuarto de segundo dentro de la canción.</p>
+            <div className="flex flex-wrap gap-1.5">
+              {an.silencios!.map((h) => (
+                <Chip key={h.ini_s} titulo="Quitar este hueco" onClick={() => anadirCorte(h.ini_s, h.fin_s)}>
+                  {fmt(h.ini_s, true)} · {(h.fin_s - h.ini_s).toFixed(1).replace('.', ',')} s ✂
+                </Chip>
+              ))}
+            </div>
+            <div className="mt-2">
+              <Btn tam="sm" onClick={() => cambiar((x) => void (x.cortes = normalizarCortes([...(x.cortes ?? []), ...an.silencios!.map((h) => ({ ini_s: h.ini_s, fin_s: h.fin_s }))])))}>Quitar todos los huecos</Btn>
+            </div>
+          </div>
+        )}
+      </Seccion>
+
+      <Seccion titulo="Acapela final" descripcion="El final de tu extended: solo la voz de un estribillo, sin instrumental. El bloque azul de la pista de arriba es el trozo que se usa." resumen={ac.enabled ? `${ac.bars} compases` : 'Apagada'} derecha={<Interruptor etiqueta="Acapela final" valor={ac.enabled} onChange={(v) => cambiar((x) => {
         x.acapela.enabled = v
         if (v && x.acapela.start_s === null) x.acapela.start_s = ab.sugerencia.acapela.start_s ?? an.alternativas.acapela[0]?.start_s ?? null
       })} />}>

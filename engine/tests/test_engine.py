@@ -216,3 +216,33 @@ class Capas(unittest.TestCase):
         res = dsp.candidatos_melodia(S["bass"] + S["other"], an["grid"], 0, an["n_bar"], np.asarray(an["F"]), 0)
         self.assertGreater(len(res), 0)
         self.assertIn("start_s", res[0])
+
+
+class Independencia(unittest.TestCase):
+    def test_entrada_lejos_del_bloque_no_acorta_la_intro(self):
+        from alargo_engine import fx
+
+        S, an = sintetico()
+        ed = edicion(fx=fx.PRESETS["ninguno"], intro=dict(fuente_s=40.0), song=dict(start_s=6.0))   # entrada lejos de start_s
+        _, info = render.render(S, an, ed)
+        self.assertGreater(info["intro"]["duracion_s"], 8 * T4 - 1.0)
+
+    def test_cortes(self):
+        from alargo_engine import fx
+
+        S, an = sintetico()
+        base, i0 = render.render(S, an, edicion(fx=fx.PRESETS["ninguno"]))
+        cort, i1 = render.render(S, an, edicion(fx=fx.PRESETS["ninguno"], cortes=[{"ini_s": 30.0, "fin_s": 36.0}]))
+        self.assertAlmostEqual((len(base) - len(cort)) / SR, 6.0, delta=0.02)
+        self.assertEqual(len(i1["cortes_s"]), 1)
+        self.assertGreater(len([s for s in i1["segmentos"] if s["tipo"] == "cancion"]), 1)
+
+    def test_enlace_solapar_y_cola(self):
+        from alargo_engine import fx
+
+        S, an = sintetico()
+        a, _ = render.render(S, an, edicion(fx=fx.PRESETS["ninguno"]))
+        b, _ = render.render(S, an, edicion(fx=fx.PRESETS["ninguno"], intro=dict(enlace=dict(tipo="solapar", ms=2000, cola=True))))
+        self.assertEqual(len(a), len(b))
+        self.assertFalse(np.allclose(a, b))
+        self.assertTrue(np.isfinite(b).all())

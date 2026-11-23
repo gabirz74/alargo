@@ -49,6 +49,7 @@ export type Edicion = {
     gain_db: number
     fade_in_ms: number
     fuente_s: number | null
+    enlace: { tipo: 'corte' | 'solapar'; ms: number; cola: boolean; cola_seg: number }
     capas: {
       on: boolean
       bateria: Capa
@@ -67,6 +68,7 @@ export type Edicion = {
     tail_fade_ms: number
   }
   grid?: { shift_s: number }
+  cortes: { ini_s: number; fin_s: number }[]
   crossfade_ms: number
   end_fade_ms: number
   master: { limiter: boolean }
@@ -87,6 +89,7 @@ export type Analisis = {
   F: number[][]
   activo: boolean[]
   entradas_voz: [number, number][]
+  silencios?: { ini_s: number; fin_s: number }[]
   melodias?: { compas: number; start_s: number; repeticiones: number; energia_db: number }[]
   alternativas: {
     intro: { start_s: number; resume_s: number; info: Record<string, unknown> }[]
@@ -117,6 +120,8 @@ export type InfoRender = {
   duracion_s: number
   segmentos: Segmento[]
   uniones: number[]
+  cortes_s?: number[]
+  quitado_s?: number
   avisos: string[]
   intro?: { duracion_s: number; tiempos: number; extra_pre: number; extra_post: number; ganancia_db: number }
   acapela?: { duracion_s: number; compases: number }

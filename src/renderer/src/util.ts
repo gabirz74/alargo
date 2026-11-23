@@ -33,5 +33,18 @@ export const clamp = (x: number, a: number, b: number): number => Math.min(b, Ma
 export const NOMBRE_AVISO: Record<string, string> = {
   intro_corta: 'La intro tiene menos de 28 tiempos de ritmo antes de la voz.',
   fx_salida_sin_acapela: 'Los efectos de salida necesitan la acapela final activada.',
+  trozo_se_sale: 'El trozo elegido para la intro se sale del final de la canción: la parte que falta sonará en silencio.',
   acapela_recortada: 'La acapela es más corta de lo pedido: no queda más canción.'
+}
+
+/** Une y ordena los cortes igual que el motor (por si se solapan). */
+export function normalizarCortes(c: { ini_s: number; fin_s: number }[]): { ini_s: number; fin_s: number }[] {
+  const ord = c.filter((x) => x.fin_s - x.ini_s > 0.02).map((x) => ({ ...x })).sort((a, b) => a.ini_s - b.ini_s)
+  const out: { ini_s: number; fin_s: number }[] = []
+  for (const x of ord) {
+    const u = out[out.length - 1]
+    if (u && x.ini_s <= u.fin_s + 0.01) u.fin_s = Math.max(u.fin_s, x.fin_s)
+    else out.push(x)
+  }
+  return out
 }

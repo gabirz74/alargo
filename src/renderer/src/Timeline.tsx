@@ -12,8 +12,8 @@ const B_Y = A_Y + A_H + 36
 const B_H = 100
 const TOTAL = B_Y + B_H + 6
 
-type Hit = { tipo: 'R' | 'intro' | 'introFin' | 'ac' | 'acFin' | 'playA' | 'playB'; x0: number; x1: number; y0: number; y1: number }
-type Colores = Record<'surface' | 'sunken' | 'ink' | 'soft' | 'faint' | 'line' | 'accent' | 'graphite' | 'inst', string>
+type Hit = { tipo: 'R' | 'intro' | 'introFin' | 'ac' | 'acFin' | 'playA' | 'playB' | 'corteX'; idx?: number; x0: number; x1: number; y0: number; y1: number }
+type Colores = Record<'kick' | 'surface' | 'sunken' | 'ink' | 'soft' | 'faint' | 'line' | 'accent' | 'graphite' | 'inst', string>
 
 let cacheColores: { tema: string; c: Colores } | null = null
 function colores(): Colores {
@@ -21,7 +21,7 @@ function colores(): Colores {
   if (cacheColores?.tema === tema) return cacheColores.c
   const cs = getComputedStyle(document.documentElement)
   const g = (n: string): string => cs.getPropertyValue('--' + n).trim()
-  const c = { surface: g('surface'), sunken: g('sunken'), ink: g('ink'), soft: g('soft'), faint: g('faint'), line: g('line'), accent: g('accent'), graphite: g('graphite'), inst: g('inst') }
+  const c = { kick: g('kick') || '#e5484d', surface: g('surface'), sunken: g('sunken'), ink: g('ink'), soft: g('soft'), faint: g('faint'), line: g('line'), accent: g('accent'), graphite: g('graphite'), inst: g('inst') }
   cacheColores = { tema, c }
   return c
 }
@@ -224,25 +224,31 @@ export function Timeline(): JSX.Element {
     ctx.clip()
     const cyA = A_Y + 28 + (A_H - 36) / 2
     const ampA = (A_H - 40) / 2
-    // compases
-    const kIni = Math.ceil((tIni - a.grid.t0) / t4)
-    const kFin = Math.floor((tFin - a.grid.t0) / t4)
-    const pxBar = t4 * z
+    // rejilla estilo DJ: cada tiempo (kick) en rojo, el primero de cada compás más fuerte y con su número
+    const T = a.grid.T
+    const pxBeat = T * z
+    const bIni = Math.ceil((tIni - a.grid.t0) / T)
+    const bFin = Math.floor((tFin - a.grid.t0) / T)
     ctx.lineWidth = 1
-    for (let k = kIni; k <= kFin; k++) {
+    for (let b = bIni; b <= bFin; b++) {
+      const k = Math.floor(b / 4)
+      const abajo = ((b % 4) + 4) % 4 === 0
+      if (!abajo && pxBeat < 5) continue
+      if (abajo && pxBeat * 4 < 5) continue
       const n = barNumber(a, k)
-      const fuerte = (((n - 1) % 8) + 8) % 8 === 0
-      if (!fuerte && pxBar < 7) continue
-      const x = Math.round(X(barTime(a, k))) + 0.5
-      ctx.strokeStyle = C.line
-      ctx.globalAlpha = fuerte ? 1 : 0.55
+      const fuerte = abajo && (((n - 1) % 8) + 8) % 8 === 0
+      const x = Math.round(X(a.grid.t0 + b * T)) + 0.5
+      ctx.strokeStyle = C.kick
+      ctx.globalAlpha = fuerte ? 0.95 : abajo ? 0.7 : 0.33
+      ctx.lineWidth = fuerte ? 1.5 : 1
       ctx.beginPath()
-      ctx.moveTo(x, A_Y + 24)
-      ctx.lineTo(x, A_Y + A_H)
+      ctx.moveTo(x, A_Y + (abajo ? 24 : 34))
+      ctx.lineTo(x, A_Y + A_H - (abajo ? 0 : 6))
       ctx.stroke()
       ctx.globalAlpha = 1
-      if (fuerte && pxBar * 8 > 60 && n >= 1) {
-        ctx.fillStyle = C.faint
+      ctx.lineWidth = 1
+      if (abajo && pxBeat * 4 * 8 > 60 && n >= 1 && (fuerte || pxBeat * 4 > 40)) {
+        ctx.fillStyle = C.kick
         ctx.fillText(String(n), x + 4, A_Y + 40)
       }
     }
@@ -255,6 +261,46 @@ export function Timeline(): JSX.Element {
       const x = X(t)
       if (x > -4 && x < ancho + 4) ctx.fillRect(x - 0.5, A_Y + A_H - 7, 1.5, 5)
     }
+    // trozos cortados (se quitan del extended)
+    ;(e.cortes ?? []).forEach((c, i) => {
+      const x0 = X(c.ini_s)
+      const x1 = X(c.fin_s)
+      if (x1 < -10 || x0 > ancho + 10) return
+      ctx.fillStyle = C.kick
+      ctx.globalAlpha = 0.16
+      ctx.fillRect(x0, A_Y, x1 - x0, A_H)
+      ctx.globalAlpha = 0.5
+      ctx.strokeStyle = C.kick
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(x0, A_Y, x1 - x0, A_H)
+      ctx.clip()
+      for (let xx = x0 - A_H; xx < x1; xx += 9) {
+        ctx.beginPath()
+        ctx.moveTo(xx, A_Y + A_H)
+        ctx.lineTo(xx + A_H, A_Y)
+        ctx.stroke()
+      }
+      ctx.restore()
+      ctx.globalAlpha = 1
+      const cx = Math.min(Math.max(x0 + 14, 14), x1 - 12)
+      if (x1 - x0 > 28) {
+        ctx.fillStyle = C.kick
+        ctx.beginPath()
+        ctx.arc(cx, A_Y + 14, 9, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.strokeStyle = C.surface
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.moveTo(cx - 3.5, A_Y + 10.5)
+        ctx.lineTo(cx + 3.5, A_Y + 17.5)
+        ctx.moveTo(cx + 3.5, A_Y + 10.5)
+        ctx.lineTo(cx - 3.5, A_Y + 17.5)
+        ctx.stroke()
+        ctx.lineWidth = 1
+        lista.push({ tipo: 'corteX', idx: i, x0: cx - 11, x1: cx + 11, y0: A_Y + 2, y1: A_Y + 26 })
+      }
+    })
     // intro
     if (e.intro.enabled) {
       const td = e.intro.fuente_s ?? e.intro.start_s
@@ -286,11 +332,12 @@ export function Timeline(): JSX.Element {
       const { a, b } = seleccion.current
       const xa = X(Math.min(a, b))
       const xb = X(Math.max(a, b))
-      ctx.fillStyle = C.accent
+      const col = useStore.getState().seleccionando === 'corte' ? C.kick : C.accent
+      ctx.fillStyle = col
       ctx.globalAlpha = 0.25
       ctx.fillRect(xa, A_Y, xb - xa, A_H)
       ctx.globalAlpha = 1
-      ctx.strokeStyle = C.accent
+      ctx.strokeStyle = col
       ctx.lineWidth = 2
       ctx.strokeRect(xa, A_Y + 1, xb - xa, A_H - 2)
       ctx.lineWidth = 1
@@ -390,9 +437,21 @@ export function Timeline(): JSX.Element {
         ctx.restore()
         ctx.fillStyle = C.soft
         const nb = String(Math.round(((s.fin - s.ini) / t4) * 10) / 10).replace('.', ',')
-        const etiqueta = ajustarTexto(ctx, s.tipo === 'intro' ? [`Intro · ${nb} compases`, 'Intro'] : s.tipo === 'acapela' ? [`Acapela · ${nb} compases`, 'Acapela'] : ['Canción'], Math.min(x1, ancho) - Math.max(x0, 0) - 18)
+        const primeraCancion = s.tipo !== 'cancion' || info.segmentos.find((q) => q.tipo === 'cancion') === s
+        const etiqueta = !primeraCancion ? null : ajustarTexto(ctx, s.tipo === 'intro' ? [`Intro · ${nb} compases`, 'Intro'] : s.tipo === 'acapela' ? [`Acapela · ${nb} compases`, 'Acapela'] : ['Canción'], Math.min(x1, ancho) - Math.max(x0, 0) - 18)
         if (etiqueta) ctx.fillText(etiqueta, Math.max(x0, 0) + 10, B_Y + 15)
       }
+      // cortes (donde se han quitado trozos)
+      ctx.strokeStyle = C.kick
+      ctx.globalAlpha = 0.9
+      for (const u of info.cortes_s ?? []) {
+        const x = Math.round(X(u)) + 0.5
+        ctx.beginPath()
+        ctx.moveTo(x, B_Y + 6)
+        ctx.lineTo(x, B_Y + B_H - 6)
+        ctx.stroke()
+      }
+      ctx.globalAlpha = 1
       // uniones
       ctx.strokeStyle = C.ink
       ctx.lineWidth = 1
@@ -442,6 +501,10 @@ export function Timeline(): JSX.Element {
     const h = hitEn(x, y)
     const t = tiempoDe(ev.clientX)
     const e = abierto.edicion
+    if (h && h.tipo === 'corteX' && h.idx !== undefined) {
+      useStore.getState().quitarCorte(h.idx)
+      return
+    }
     if (h && (h.tipo === 'playA' || h.tipo === 'playB')) {
       const modo = h.tipo === 'playA' ? 'original' : 'resultado'
       if (audio.modo === modo) audio.alternar()
@@ -454,7 +517,8 @@ export function Timeline(): JSX.Element {
     }
     if (useStore.getState().seleccionando && y >= A_Y && y <= A_Y + A_H) {
       ev.currentTarget.setPointerCapture(ev.pointerId)
-      const ini = snapBar(an, clamp(t, 0, an.duracion_s))
+      const T0 = an.grid.T
+      const ini = useStore.getState().seleccionando === 'corte' ? an.grid.t0 + Math.round((clamp(t, 0, an.duracion_s) - an.grid.t0) / T0) * T0 : snapBar(an, clamp(t, 0, an.duracion_s))
       seleccion.current = { a: ini, b: ini }
       sucio.current = true
       setCursor('crosshair')
@@ -485,7 +549,8 @@ export function Timeline(): JSX.Element {
     const y = ev.clientY - r.top
     const d = arrastre.current
     if (seleccion.current) {
-      seleccion.current.b = clamp(t0Mov(ev.clientX), 0, an.duracion_s)
+      const tb = clamp(t0Mov(ev.clientX), 0, an.duracion_s)
+      seleccion.current.b = useStore.getState().seleccionando === 'corte' ? an.grid.t0 + Math.round((tb - an.grid.t0) / an.grid.T) * an.grid.T : tb
       sucio.current = true
       return
     }
@@ -495,7 +560,7 @@ export function Timeline(): JSX.Element {
         return
       }
       const h = hitEn(x, y)
-      setCursor(h ? (h.tipo === 'R' || h.tipo === 'acFin' || h.tipo === 'introFin' ? 'ew-resize' : h.tipo === 'playA' || h.tipo === 'playB' ? 'pointer' : 'grab') : y >= A_Y && y <= B_Y + B_H ? 'pointer' : 'default')
+      setCursor(h ? (h.tipo === 'R' || h.tipo === 'acFin' || h.tipo === 'introFin' ? 'ew-resize' : h.tipo === 'playA' || h.tipo === 'playB' || h.tipo === 'corteX' ? 'pointer' : 'grab') : y >= A_Y && y <= B_Y + B_H ? 'pointer' : 'default')
       return
     }
     const t = tiempoDe(ev.clientX)
@@ -521,7 +586,7 @@ export function Timeline(): JSX.Element {
         const cerca = an.entradas_voz.find(([te]) => Math.abs(te - 0.015 - R) < 0.12 && true)
         if (cerca) R = cerca[0] - 0.015
       }
-      store.cambiar((e) => void (e.song.start_s = R), 'arrastre-R')
+      store.moverEntrada(R, 'arrastre-R')
     }
   }
 
@@ -533,9 +598,16 @@ export function Timeline(): JSX.Element {
       const fin = snapBar(an, Math.max(a, b))
       const bars = Math.round((fin - ini) / T4(an))
       const st = useStore.getState()
+      const modo = st.seleccionando
       st.setSeleccionando(false)
-      st.elegirTrozo(ini)
-      if (bars >= 1) st.cambiar((e) => void (e.intro.bars = clamp(bars, 1, 32)), 'trozo-bars')
+      if (modo === 'corte') {
+        const T = an.grid.T
+        const sb = (t: number): number => an.grid.t0 + Math.round((t - an.grid.t0) / T) * T
+        st.anadirCorte(sb(Math.min(a, b)), sb(Math.max(a, b)))
+      } else {
+        st.elegirTrozo(ini)
+        if (bars >= 1) st.cambiar((e) => void (e.intro.bars = clamp(bars, 1, 32)), 'trozo-bars')
+      }
       setCursor('default')
       sucio.current = true
       return

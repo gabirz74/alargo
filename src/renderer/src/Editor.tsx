@@ -58,14 +58,11 @@ function Transporte(): JSX.Element {
   const preview = useStore((s) => s.preview)
   const auto = useStore((s) => s.autoEscuchar)
   const setAuto = useStore((s) => s.setAutoEscuchar)
-  const escuchar = useStore((s) => s.escucharZona)
   const [mostrarAtajos, setMostrarAtajos] = useState(false)
   useReproductor()
   const info = preview.info
   const modo = audio.modo
   const sonando = audio.sonando
-  const tieneIntro = !!info?.segmentos.some((s) => s.tipo === 'intro')
-  const tieneAcapela = !!info?.segmentos.some((s) => s.tipo === 'acapela')
 
   useEffect(() => {
     const h = (): void => setMostrarAtajos(true)
@@ -84,29 +81,34 @@ function Transporte(): JSX.Element {
         <div className="ml-3 flex min-w-[260px] flex-1 items-center gap-3">
           <Posicion />
         </div>
-        <BotonT n="repetir" titulo="Repetir en bucle toda la pista (L)" activo={audio.bucleTodo} onClick={() => { audio.alternarBucleTodo(); useStore.setState({}) }} />
         <BotonT n={audio.silencio || audio.volumen === 0 ? 'silencio' : 'volumen'} titulo="Silenciar (M)" activo={audio.silencio} onClick={() => { audio.alternarSilencio(); useStore.setState({}) }} />
         <input type="range" aria-label="Volumen" style={{ width: 74, ['--p' as string]: `${(audio.silencio ? 0 : audio.volumen) * 100}%` }} min={0} max={1} step={0.01} value={audio.silencio ? 0 : audio.volumen} onChange={(e) => { audio.poner(parseFloat(e.target.value)); useStore.setState({}) }} />
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-3">
-        <div className="flex items-center gap-2">
-          <span className="text-[13px] text-soft">Escuchar</span>
+      <div className="mt-3 flex flex-wrap items-start gap-x-6 gap-y-3 border-t border-line pt-3">
+        <div>
+          <div className="mb-1 text-[12px] text-faint">Qué escuchas</div>
           <Segmentado valor={modo} opciones={[{ v: 'resultado', t: 'Tu extended', titulo: 'Atajo: 1' }, { v: 'original', t: 'Canción original', titulo: 'Atajo: 2' }]} onChange={(v) => { audio.usar(v); useStore.setState({}) }} />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[13px] text-soft">Probar empalmes</span>
-          {tieneIntro && <Btn tam="sm" icono="union" titulo="Escucha el paso de la intro a la canción (I)" onClick={() => escuchar('intro')}>Intro → canción</Btn>}
-          {tieneAcapela && <Btn tam="sm" icono="union" titulo="Escucha el paso de la canción a la acapela (A)" onClick={() => escuchar('acapela')}>Canción → acapela</Btn>}
-          <button type="button" aria-pressed={audio.bucleTramo} title="Repite el empalme una y otra vez (R)" onClick={() => { audio.alternarBucleTramo(); useStore.setState({}) }} className={`no-drag h-8 rounded-xl px-3 text-[13px] transition ${audio.bucleTramo ? 'bg-accent-soft font-medium text-accent' : 'bg-sunken text-soft hover:text-ink'}`}>
-            Repetir empalme
-          </button>
+        <div>
+          <div className="mb-1 text-[12px] text-faint">Repetir</div>
+          <div className="flex gap-2">
+            <button type="button" aria-pressed={audio.bucleTodo} title="Cuando llega al final vuelve a empezar (L)" onClick={() => { audio.alternarBucleTodo(); useStore.setState({}) }} className={`no-drag h-8 rounded-xl px-3 text-[13px] transition ${audio.bucleTodo ? 'bg-accent-soft font-medium text-accent' : 'bg-sunken text-soft hover:text-ink'}`}>
+              Toda la pista
+            </button>
+            <button type="button" aria-pressed={audio.bucleTramo} title="Al oír una unión (los botones ⟷ de arriba), la repite una y otra vez (R)" onClick={() => { audio.alternarBucleTramo(); useStore.setState({}) }} className={`no-drag h-8 rounded-xl px-3 text-[13px] transition ${audio.bucleTramo ? 'bg-accent-soft font-medium text-accent' : 'bg-sunken text-soft hover:text-ink'}`}>
+              Las uniones
+            </button>
+          </div>
         </div>
-        <label className="ml-auto flex items-center gap-2 text-[13px] text-soft" title="Cuando cambias algo, suena el empalme afectado para que oigas el efecto">
-          Escuchar cada cambio
-          <Interruptor etiqueta="Escuchar cada cambio" valor={auto} onChange={setAuto} />
-        </label>
-        <BtnIcono n="teclado" titulo="Atajos de teclado (?)" onClick={() => setMostrarAtajos(true)} />
+        <div className="min-w-[220px] flex-1">
+          <div className="mb-1 flex items-center justify-end gap-3 text-[13px] text-soft">
+            <span>Oír el efecto al cambiar algo</span>
+            <Interruptor etiqueta="Oír el efecto al cambiar algo" valor={auto} onChange={setAuto} />
+            <BtnIcono n="teclado" titulo="Atajos de teclado (?)" onClick={() => setMostrarAtajos(true)} />
+          </div>
+          <p className="text-right text-[12px] leading-snug text-faint">Cuando mueves un ajuste, suena solo el trozo que has cambiado, sin que tengas que buscarlo.</p>
+        </div>
         {preview.renderizando && <span className="pulso text-[12px] text-faint">Actualizando…</span>}
       </div>
       {mostrarAtajos && <Atajos onCerrar={() => setMostrarAtajos(false)} />}
@@ -125,7 +127,7 @@ const ATAJOS: [string, string][] = [
   ['I', 'Probar el empalme de la intro'],
   ['A', 'Probar el empalme de la acapela'],
   ['F', 'Probar el final (eco, reverb…)'],
-  ['R', 'Repetir el empalme en bucle'],
+  ['R', 'Repetir las uniones en bucle'],
   ['L', 'Repetir toda la pista en bucle'],
   ['1  ·  2', 'Escuchar tu extended / la canción original'],
   ['M', 'Silenciar'],
@@ -173,8 +175,9 @@ function Guia(): JSX.Element | null {
         <li>
           <b className="font-semibold">Arriba</b> está tu <b className="font-semibold">canción original</b>: ahí eliges qué trozos usar. <b className="font-semibold">Abajo</b> está <b className="font-semibold">tu extended</b>: el resultado, lo que se exporta.
         </li>
-        <li>Arrastra el bloque gris (intro), la línea «Entra la voz» y el bloque azul (acapela) por la canción, o ajusta todo en el panel de la derecha.</li>
-        <li>Cada vez que cambias algo, el resultado se actualiza y suena el empalme afectado. Pulsa ▶ junto al nombre de cada pista para oírla entera.</li>
+        <li>Las líneas <b className="font-semibold text-danger">rojas</b> son los tiempos (kicks): la más gruesa marca el primer tiempo de cada compás.</li>
+        <li>En el panel de la derecha ve abriendo <b className="font-semibold">una sección cada vez</b>: qué suena en la intro, cuándo entra la canción, la acapela, los efectos… y «Cortar partes» para quitar lo que no quieras.</li>
+        <li>También puedes arrastrar por la pista de arriba: el bloque gris (intro), la línea «Entra la voz» y el bloque azul (acapela). Cada cambio suena solo para que oigas su efecto.</li>
       </ul>
       <div className="absolute right-2 top-2">
         <BtnIcono n="cerrar" titulo="Entendido, ocultar" onClick={cerrarGuia} />
@@ -186,27 +189,50 @@ function Guia(): JSX.Element | null {
 function Resumen(): JSX.Element | null {
   const info = useStore((s) => s.preview.info)
   const ab = useStore((s) => s.abierto)
+  const escuchar = useStore((s) => s.escucharZona)
   if (!info || !ab) return null
   const t4 = T4(ab.analisis)
+  // une los trozos de canción (puede haber varios si has cortado partes)
+  const partes: { tipo: 'intro' | 'cancion' | 'acapela'; ini: number; fin: number; largo: number }[] = []
+  for (const s of info.segmentos) {
+    const u = partes[partes.length - 1]
+    if (u && u.tipo === 'cancion' && s.tipo === 'cancion') {
+      u.fin = s.fin
+      u.largo += s.fin - s.ini
+    } else partes.push({ tipo: s.tipo, ini: s.ini, fin: s.fin, largo: s.fin - s.ini })
+  }
   const nombres = { intro: 'Intro', cancion: 'Canción', acapela: 'Acapela' } as const
   const color = { intro: 'bg-graphite', cancion: 'bg-faint', acapela: 'bg-accent' } as const
+  const nCortes = info.cortes_s?.length ?? 0
   return (
-    <div className="flex flex-wrap gap-2" aria-label="Estructura de tu extended">
-      {info.segmentos.map((s) => {
-        const n = Math.round(((s.fin - s.ini) / t4) * 10) / 10
-        return (
-          <button key={s.tipo} type="button" title="Escuchar desde aquí" onClick={() => { audio.usar('resultado'); audio.ir(s.ini); void audio.resultado.play().catch(() => {}) }} className="no-drag flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-left text-[13px] hover:bg-sunken">
-            <span className={`h-2.5 w-2.5 rounded-full ${color[s.tipo]}`} />
-            <span>
-              <b className="font-semibold">{nombres[s.tipo]}</b>
-              <span className="num ml-2 text-soft">
-                {fmt(s.ini)}–{fmt(s.fin)}
-                {s.tipo !== 'cancion' ? ` · ${String(n).replace('.', ',')} compases` : ''}
-              </span>
-            </span>
-          </button>
-        )
-      })}
+    <div>
+      <div className="flex flex-wrap items-center gap-1.5" aria-label="Estructura de tu extended">
+        {partes.map((p, i) => {
+          const n = Math.round((p.largo / t4) * 10) / 10
+          const previa = partes[i - 1]
+          const zona = previa ? (p.tipo === 'cancion' ? 'intro' : 'acapela') : null
+          return (
+            <div key={p.tipo + i} className="flex items-center gap-1.5">
+              {zona && (
+                <button type="button" title={zona === 'intro' ? 'Escuchar solo el paso de la intro a la canción (I)' : 'Escuchar solo el paso de la canción a la acapela (A)'} aria-label={zona === 'intro' ? 'Escuchar el paso de la intro a la canción' : 'Escuchar el paso de la canción a la acapela'} onClick={() => escuchar(zona)} className="no-drag grid h-9 w-9 place-items-center rounded-full bg-sunken text-soft transition hover:bg-accent-soft hover:text-accent">
+                  <Icono n="union" size={16} />
+                </button>
+              )}
+              <button type="button" title="Escuchar esta parte desde su principio" onClick={() => { audio.usar('resultado'); audio.ir(p.ini); void audio.resultado.play().catch(() => {}) }} className="no-drag flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-left text-[13px] hover:bg-sunken">
+                <span className={`h-2.5 w-2.5 rounded-full ${color[p.tipo]}`} />
+                <span>
+                  <b className="font-semibold">{nombres[p.tipo]}</b>
+                  <span className="num ml-2 text-soft">
+                    {fmt(p.ini)}–{fmt(p.fin)}
+                    {p.tipo !== 'cancion' ? ` · ${String(n).replace('.', ',')} compases` : nCortes ? ` · ${nCortes} ${nCortes === 1 ? 'corte' : 'cortes'}` : ''}
+                  </span>
+                </span>
+              </button>
+            </div>
+          )
+        })}
+      </div>
+      <p className="mt-2 px-1 text-[12px] leading-snug text-faint">Pulsa una parte para oírla desde su principio. Pulsa el botón entre dos partes para oír solo el paso de una a otra.</p>
     </div>
   )
 }
