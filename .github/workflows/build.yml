@@ -1,0 +1,92 @@
+name: Build
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  motor:
+    name: Motor (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Instalar dependencias del motor (igual que en el primer arranque)
+        shell: bash
+        run: |
+          python -m pip install uv
+          uv venv .venv --python 3.12
+          PY=$(ls .venv/bin/python 2>/dev/null || ls .venv/Scripts/python.exe)
+          uv pip install --python "$PY" -r engine/requirements.txt
+      - name: Pruebas del motor
+        shell: bash
+        run: |
+          PY=$(ls .venv/bin/python 2>/dev/null || ls .venv/Scripts/python.exe)
+          $PY -c "import audio_separator, beat_this, librosa, pyloudnorm; print('importaciones correctas')"
+          cd engine && ../$PY -m unittest discover -s tests -p "test_*.py" -v
+
+  app:
+    name: App (${{ matrix.etiqueta }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { etiqueta: mac-arm64, os: macos-14, script: 'dist:mac:arm64', plataforma: darwin, arch: arm64 }
+          - { etiqueta: mac-x64, os: macos-15-intel, script: 'dist:mac:x64', plataforma: darwin, arch: x64 }
+          - { etiqueta: windows, os: windows-latest, script: 'dist:win', plataforma: win32, arch: x64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Construir instalador
+        run: npm run ${{ matrix.script }}
+      - name: Prueba automática de la app empaquetada (macOS)
+        if: matrix.plataforma == 'darwin'
+        run: |
+          APP=$(ls -d dist/mac*/Alargo.app | head -1)
+          "$APP/Contents/MacOS/Alargo" --self-test | tee self-test.log
+          grep -q "SELF-TEST OK" self-test.log
+      - name: Prueba automática de la app empaquetada (Windows)
+        if: matrix.plataforma == 'win32'
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist/win-unpacked/Alargo.exe" -ArgumentList "--self-test" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "La prueba automática falló (código $($p.ExitCode))" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: instalador-${{ matrix.etiqueta }}
+          path: |
+            dist/*.dmg
+            dist/*.exe
+          if-no-files-found: error
+
+  publicar:
+    name: Publicar release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [motor, app]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: instaladores
+          merge-multiple: true
+      - name: Crear la release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" instaladores/* --repo "${{ github.repository }}" --title "Alargo ${{ github.ref_name }}" --generate-notes

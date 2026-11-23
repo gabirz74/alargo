@@ -1,0 +1,11 @@
+# Dependencias del motor (se instalan la primera vez que se abre la app, en una carpeta propia)
+audio-separator[cpu]==0.48.0
+librosa
+soundfile
+numpy
+scipy
+pyloudnorm
+mutagen
+imageio-ffmpeg
+audioread
+beat_this @ https://github.com/CPJKU/beat_this/archive/refs/tags/v1.1.0.zip
