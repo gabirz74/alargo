@@ -327,3 +327,44 @@ def picos(x, pps=100, escala=None):
     q = np.stack([mn, mx], 1) / escala * 127
     q = np.clip(np.round(q), -127, 127).astype(np.int8)
     return dict(pps=pps, n=int(n), escala=float(escala), datos=base64.b64encode(q.tobytes()).decode("ascii"))
+
+
+# ----------------------------------------------------------------------------- melodías que se repiten (para elegir la intro)
+def candidatos_melodia(melodia, grid, j0, n_bar, F, fase, maximo=6):
+    """Trozos de 8 compases cuya melodía/armonía (pista sin batería ni voz) se repite más a lo largo de la canción:
+    suelen ser el gancho o el estribillo instrumental. Devuelve [{compas, start_s, repeticiones, energia_db}] ordenados."""
+    y = melodia.mean(1)
+    hop = 1024
+    ch = librosa.feature.chroma_cqt(y=y, sr=SR, hop_length=hop)
+    tt = librosa.frames_to_time(np.arange(ch.shape[1]), sr=SR, hop_length=hop)
+    T, t0 = grid["T"], grid["t0"]
+    B = np.zeros((n_bar * 4, 12))
+    for k in range(n_bar * 4):
+        a = t0 + (j0 * 4 + k) * T
+        m = (tt >= a) & (tt < a + T)
+        if m.any():
+            B[k] = ch[:, m].mean(1)
+    B = (B - B.mean(0)) / (B.std(0) + 1e-6)
+    n = n_bar - W + 1
+    if n < W + 1:
+        return []
+    V = np.array([B[c * 4:(c + W) * 4].ravel() for c in range(n)])
+    V = V / (np.linalg.norm(V, axis=1, keepdims=True) + 1e-9)
+    Sm = V @ V.T
+    cand = [c for c in range(n) if (c - fase) % W == 0]
+    ener = np.array([float(np.mean(F[c:c + W, 1])) for c in cand])
+    emin, emax = ener.min(), ener.max()
+    pts = []
+    for c, e in zip(cand, ener):
+        reps = sum(1 for j in cand if abs(j - c) >= W and Sm[c, j] >= 0.8)
+        ok, _ = bloque_ok(F, c)
+        score = reps + 1.5 * (e - emin) / (emax - emin + 1e-9) + (0.5 if ok else -1.0)
+        pts.append((score, c, reps, e))
+    pts.sort(reverse=True)
+    out = []
+    for score, c, reps, e in pts:
+        if all(abs(c - o["compas"]) >= W for o in out):
+            out.append(dict(compas=int(c), start_s=round(t_compas(grid, j0 + c), 4), repeticiones=int(reps) + 1, energia_db=round(e, 1)))
+        if len(out) >= maximo:
+            break
+    return out

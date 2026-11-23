@@ -121,6 +121,7 @@ def analizar(proj, entrada, calidad, prog, pistas_listas=None):
     c_bar, info_fin = dsp.elegir_estribillo(tabla, n_bar)
     prog.set(0.85)
 
+    melodias = dsp.candidatos_melodia(S["other"] + S["bass"], grid, j0, n_bar, F, fase_ini)
     d_bar, R, info_in = cands[0]
     sug = dict(
         intro=dict(start_s=dsp.t_compas(grid, j0 + d_bar)),
@@ -142,7 +143,7 @@ def analizar(proj, entrada, calidad, prog, pistas_listas=None):
         j0=j0, n_bar=n_bar, F=np.round(F, 2).tolist(), activo=[bool(a) for a in activo],
         fase=dict(global_=fase0, inicio=fase_ini, final=fase_fin),
         entradas_voz=[[round(t, 3), round(min(g, 9.0), 2)] for t, g in entradas],
-        alternativas=dict(intro=otras_intro, acapela=otras_acap),
+        alternativas=dict(intro=otras_intro, acapela=otras_acap), melodias=melodias,
         info_sugerencia=dict(intro=info_in, estribillo=info_fin),
         calidad=calidad, ajuste=dict(lag_muestras=int(lag_r), ganancias=g_r),
     )

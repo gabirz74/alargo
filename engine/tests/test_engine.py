@@ -184,3 +184,35 @@ class Efectos(unittest.TestCase):
         S, an = sintetico()
         _, info = render.render(S, an, edicion(acapela=dict(enabled=False)))
         self.assertIn("fx_salida_sin_acapela", info["avisos"])
+
+
+class Capas(unittest.TestCase):
+    def test_trozo_de_otra_parte_y_capas(self):
+        from alargo_engine import fx
+
+        S, an = sintetico()
+        base, _ = render.render(S, an, edicion(fx=fx.PRESETS["ninguno"]))
+        # misma duración, pero el audio de la intro cambia si se toma de otro compás
+        otro, info = render.render(S, an, edicion(fx=fx.PRESETS["ninguno"], intro=dict(fuente_s=24.0 + 8 * T4 - 8 * T4 + 2 * T4)))
+        self.assertEqual(len(base), len(otro))
+        capas, _ = render.render(S, an, edicion(fx=fx.PRESETS["ninguno"], intro=dict(capas=dict(on=True, bajo=dict(on=False), melodia=dict(on=False)))))
+        self.assertEqual(len(base), len(capas))
+        self.assertFalse(np.allclose(base[: SR * 4], capas[: SR * 4]))   # solo batería: no suena el bajo
+
+    def test_efectos_nuevos(self):
+        from alargo_engine import fx
+
+        S, an = sintetico()
+        todo = {**fx.PRESETS["ninguno"], "intro": {k: {**v, "on": True} for k, v in fx.PRESETS["ninguno"]["intro"].items()},
+                "salida": {k: {**v, "on": True} for k, v in fx.PRESETS["ninguno"]["salida"].items()}}
+        out, info = render.render(S, an, edicion(fx=todo))
+        self.assertTrue(np.isfinite(out).all())
+        self.assertIn("epico", fx.PRESETS)
+
+    def test_melodias(self):
+        from alargo_engine import dsp
+
+        S, an = sintetico(120.0)
+        res = dsp.candidatos_melodia(S["bass"] + S["other"], an["grid"], 0, an["n_bar"], np.asarray(an["F"]), 0)
+        self.assertGreater(len(res), 0)
+        self.assertIn("start_s", res[0])

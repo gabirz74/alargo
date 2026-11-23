@@ -1,5 +1,7 @@
 export type Fuente = 'inst' | 'drums' | 'drums_bass'
 
+export type Capa = { on: boolean; desde_s: number | null; nivel_db: number }
+
 export type Efectos = {
   preset: string
   intro: {
@@ -9,6 +11,15 @@ export type Efectos = {
     corte: { on: boolean; tiempos: number }
     redoble: { on: boolean; tiempos: number; nivel_db: number }
     bateria: { on: boolean; nivel_db: number }
+    platillo_inv: { on: boolean; tiempos: number; nivel_db: number }
+    sirena: { on: boolean; compases: number; nivel_db: number }
+    bocina: { on: boolean; nivel_db: number }
+    caida_graves: { on: boolean; nivel_db: number }
+    freno: { on: boolean; tiempos: number }
+    tartamudeo: { on: boolean; tiempos: number; division: number }
+    bombeo: { on: boolean; profundidad: number }
+    bombo: { on: boolean; nivel_db: number }
+    crescendo: { on: boolean; desde_db: number }
   }
   salida: {
     eco: { on: boolean; division: number; mezcla_db: number }
@@ -16,6 +27,8 @@ export type Efectos = {
     filtro: { on: boolean; hasta_hz: number; compases: number }
     bateria: { on: boolean; nivel_db: number }
     corte_ritmico: { on: boolean; compases: number; division: number }
+    freno: { on: boolean; tiempos: number }
+    impacto_final: { on: boolean; nivel_db: number }
   }
 }
 
@@ -35,6 +48,14 @@ export type Edicion = {
     level_cap_db: number
     gain_db: number
     fade_in_ms: number
+    fuente_s: number | null
+    capas: {
+      on: boolean
+      bateria: Capa
+      bajo: Capa
+      melodia: Capa
+      voz: Capa & { efecto: boolean }
+    }
   }
   song: { start_s: number; end_s: number | null }
   acapela: {
@@ -66,6 +87,7 @@ export type Analisis = {
   F: number[][]
   activo: boolean[]
   entradas_voz: [number, number][]
+  melodias?: { compas: number; start_s: number; repeticiones: number; energia_db: number }[]
   alternativas: {
     intro: { start_s: number; resume_s: number; info: Record<string, unknown> }[]
     acapela: { start_s: number; parecido: number; densidad_voz: number }[]

@@ -1,7 +1,7 @@
 import { useStore } from './store'
 import type { Fuente } from './types'
 import { Ajuste, Btn, Chip, Deslizador, Fila, Interruptor, Segmentado, Seccion } from './ui'
-import type { Efectos } from './types'
+import type { Capa, Efectos } from './types'
 import { barK, barNumber, barTime, fmt, T4 } from './util'
 
 const sgn = (v: number, d = 1): string => (v > 0 ? '+' : '') + v.toFixed(d).replace('.', ',')
@@ -33,6 +33,37 @@ function PortadaVista({ id, marca }: { id: string; marca: boolean }): JSX.Elemen
   )
 }
 
+
+function CapaFila({ nombre, ayuda, capa, fuente, onChange }: { nombre: string; ayuda: string; capa: Capa; fuente: number; onChange: (f: (c: Capa) => void, clave?: string) => void }): JSX.Element {
+  const ab = useStore((s) => s.abierto)
+  if (!ab) return <></>
+  const an = ab.analisis
+  const k0 = barK(an, capa.desde_s ?? fuente)
+  return (
+    <div className="border-t border-line py-2.5 first:border-0">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[13px] font-medium">{nombre}</div>
+          <div className="text-[12px] leading-snug text-faint">{ayuda}</div>
+        </div>
+        <Interruptor etiqueta={nombre} valor={capa.on} onChange={(v) => onChange((c) => void (c.on = v))} />
+      </div>
+      {capa.on && (
+        <div className="mt-2 pl-1">
+          <Deslizador etiqueta="Volumen" valor={capa.nivel_db} min={-24} max={6} paso={0.5} formato={(v) => `${v > 0 ? '+' : ''}${v} dB`} onChange={(v) => onChange((c) => void (c.nivel_db = v), 'capa-' + nombre)} />
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[12px] text-soft">{capa.desde_s === null ? 'Del mismo trozo' : `Del compás ${barNumber(an, k0)} (${fmt(capa.desde_s)})`}</span>
+            <div className="flex items-center gap-1">
+              <Ajuste pasos={[{ t: '−8', d: -8 }, { t: '−1', d: -1 }, { t: '+1', d: 1 }, { t: '+8', d: 8 }]} onPaso={(d) => onChange((c) => void (c.desde_s = barTime(an, barK(an, c.desde_s ?? fuente) + d)))} />
+              {capa.desde_s !== null && <Chip onClick={() => onChange((c) => void (c.desde_s = null))}>Igual</Chip>}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Acciones({ onEscuchar, onRestablecer }: { onEscuchar?: () => void; onRestablecer: () => void }): JSX.Element {
   return (
     <div className="mb-3 flex flex-wrap gap-2">
@@ -58,6 +89,9 @@ export function Inspector(): JSX.Element | null {
   const restablecerSeccion = useStore((s) => s.restablecerSeccion)
   const fxPresets = useStore((s) => s.fxPresets)
   const ajustes = useStore((s) => s.ajustes)
+  const seleccionando = useStore((s) => s.seleccionando)
+  const setSeleccionando = useStore((s) => s.setSeleccionando)
+  const elegirTrozo = useStore((s) => s.elegirTrozo)
   const guardarAjustes = useStore((s) => s.guardarAjustes)
   if (!ab) return null
   const { edicion: e, analisis: an } = ab
@@ -71,6 +105,8 @@ export function Inspector(): JSX.Element | null {
       f(x.fx)
       x.fx.preset = 'personalizado'
     }, clave)
+  const fuenteIntro = e.intro.fuente_s ?? e.intro.start_s
+  const kFuente = barK(an, fuenteIntro)
   const anacrusa = (it.start_s - e.song.start_s) / T
   const cercanas = an.entradas_voz.filter(([t, gap]) => t > it.start_s - 3.5 * t4 && t < it.start_s + t4 && gap >= 0.1).slice(0, 6)
   const kAc = ac.start_s !== null ? barK(an, ac.start_s) : 0
@@ -81,7 +117,7 @@ export function Inspector(): JSX.Element | null {
         {it.enabled && (
           <>
             <Acciones onEscuchar={() => escuchar('intro')} onRestablecer={() => restablecerSeccion('intro')} />
-            <Fila apilada etiqueta="Sonido" ayuda="Qué se oye en la intro.">
+            <Fila apilada etiqueta="Sonido" ayuda={e.intro.capas.on ? 'Ahora mandan las capas de «Qué suena en la intro».' : 'Qué se oye en la intro.'}>
               <Segmentado<Fuente> valor={it.source} opciones={[{ v: 'inst', t: 'Completo', titulo: 'Todo el instrumental' }, { v: 'drums', t: 'Batería' }, { v: 'drums_bass', t: 'Bat. + bajo' }]} onChange={(v) => cambiar((x) => void (x.intro.source = v))} />
             </Fila>
             <Fila etiqueta="Duración" ayuda="En compases (4 tiempos cada uno).">
@@ -114,6 +150,50 @@ export function Inspector(): JSX.Element | null {
           </>
         )}
         {!it.enabled && <p className="text-[12px] text-faint">Sin intro, el extended empieza donde retoma la canción.</p>}
+      </Seccion>
+
+      <Seccion titulo="Qué suena en la intro" abierta resumen={e.intro.capas.on ? 'Por capas' : e.intro.fuente_s !== null ? `Trozo elegido (compás ${barNumber(an, barK(an, e.intro.fuente_s))})` : 'Propuesta de la IA'}
+        descripcion="La IA elige el trozo que usa de intro, pero la melodía que más te gusta puede estar en otra parte. Elige tú qué compases suenan al principio, o mezcla la batería, el bajo y la melodía de partes distintas.">
+        <div className="mb-3 flex flex-wrap gap-2">
+          <Btn tam="sm" icono="play" onClick={() => escuchar('introTodo')} titulo="Escucha la intro desde el principio">Escuchar la intro entera</Btn>
+          <Btn tam="sm" variante={seleccionando ? 'primario' : 'suave'} onClick={() => setSeleccionando(!seleccionando)} titulo="Arrastra sobre la canción de arriba para marcar el trozo">
+            {seleccionando ? 'Arrastra sobre la canción…' : 'Elegir con el ratón'}
+          </Btn>
+          {e.intro.fuente_s !== null && <Btn tam="sm" variante="fantasma" icono="repetir" onClick={() => elegirTrozo(null)}>Volver al de la IA</Btn>}
+        </div>
+        <Fila apilada etiqueta="Trozo que suena" ayuda={`Empieza en el compás ${barNumber(an, kFuente)} (${fmt(fuenteIntro, true)}). Cuenta ${it.bars} compases.`}>
+          <Ajuste pasos={[{ t: '−8', d: -8 }, { t: '−1', d: -1 }, { t: '+1', d: 1 }, { t: '+8', d: 8 }]} onPaso={(d) => elegirTrozo(barTime(an, kFuente + d))} />
+        </Fila>
+        {(an.melodias?.length ?? 0) > 0 && (
+          <div className="mt-2">
+            <div className="mb-1 text-[12px] text-faint">Melodías que más se repiten en la canción (suelen ser el gancho)</div>
+            <div className="flex flex-wrap gap-1.5">
+              {an.melodias!.map((m) => (
+                <Chip key={m.start_s} titulo={`Se repite ${m.repeticiones} veces`} activo={Math.abs(m.start_s - fuenteIntro) < 0.5} onClick={() => elegirTrozo(m.start_s)}>
+                  {fmt(m.start_s)} · ×{m.repeticiones}
+                </Chip>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="mt-4 border-t border-line pt-3">
+          <Fila etiqueta="Mezclar por capas" ayuda="Elige la batería, el bajo, la melodía y hasta un trocito de voz de partes distintas.">
+            <Interruptor etiqueta="Mezclar por capas" valor={e.intro.capas.on} onChange={(v) => cambiar((x) => void (x.intro.capas.on = v))} />
+          </Fila>
+          {e.intro.capas.on && (
+            <div className="mt-1">
+              <CapaFila nombre="Batería" ayuda="El ritmo. Coge la de un estribillo para más energía." capa={e.intro.capas.bateria} fuente={fuenteIntro} onChange={(f, c) => cambiar((x) => f(x.intro.capas.bateria), c)} />
+              <CapaFila nombre="Bajo" ayuda="Las notas graves." capa={e.intro.capas.bajo} fuente={fuenteIntro} onChange={(f, c) => cambiar((x) => f(x.intro.capas.bajo), c)} />
+              <CapaFila nombre="Melodía" ayuda="Piano, sintes, guitarra… lo que se tararea." capa={e.intro.capas.melodia} fuente={fuenteIntro} onChange={(f, c) => cambiar((x) => f(x.intro.capas.melodia), c)} />
+              <CapaFila nombre="Voz de adelanto" ayuda="Una frase cantada que adelanta el estribillo." capa={e.intro.capas.voz} fuente={fuenteIntro} onChange={(f, c) => cambiar((x) => f(x.intro.capas.voz), c)} />
+              {e.intro.capas.voz.on && (
+                <Fila etiqueta="Voz lejana" ayuda="Con reverb y sin agudos, como un recuerdo.">
+                  <Interruptor etiqueta="Voz lejana" valor={e.intro.capas.voz.efecto} onChange={(v) => cambiar((x) => void (x.intro.capas.voz.efecto = v))} />
+                </Fila>
+              )}
+            </div>
+          )}
+        </div>
       </Seccion>
 
       <Seccion titulo="Entrada de la voz" abierta descripcion="Dónde retoma la canción tras la intro. La voz suele empezar un poco antes del compás (anacrusa); la IA lo detecta, tú puedes afinarlo." resumen={fmt(e.song.start_s, true)}>
@@ -176,18 +256,18 @@ export function Inspector(): JSX.Element | null {
       </Seccion>
 
 
-      <Seccion titulo="Efectos de DJ" descripcion="Efectos para que la entrada y la salida sean más dinámicas, como en un mix en directo. Elige un estilo y ajusta lo que quieras." resumen={e.fx.preset === 'ninguno' ? 'Sin efectos' : e.fx.preset === 'personalizado' ? 'Personalizados' : e.fx.preset === 'suave' ? 'Suave' : 'Intenso'}>
+      <Seccion titulo="Efectos de entrada" descripcion="Efectos de DJ para que la intro sea más épica y energética, como en un mix en directo. Elige un estilo y ajusta lo que quieras; cada efecto se puede activar por separado." resumen={{ ninguno: 'Sin efectos', personalizado: 'Personalizados', suave: 'Suave', intenso: 'Intenso', epico: 'Épico' }[e.fx.preset] ?? e.fx.preset}>
         <div className="mb-3 flex flex-wrap gap-2">
           <Btn tam="sm" icono="play" onClick={() => escuchar('intro')} titulo="Escucha la entrada (I)">Escuchar la entrada</Btn>
-          <Btn tam="sm" icono="play" onClick={() => escuchar('fin')} titulo="Escucha el final (F)">Escuchar el final</Btn>
           <Btn tam="sm" variante="fantasma" icono="repetir" onClick={() => restablecerSeccion('efectos')} titulo="Vuelve al estilo que propuso la IA">Restablecer</Btn>
         </div>
         <Fila apilada etiqueta="Estilo" ayuda="Un punto de partida; luego puedes tocar cada efecto.">
-          <Segmentado valor={e.fx.preset} opciones={[{ v: 'ninguno', t: 'Sin efectos' }, { v: 'suave', t: 'Suave' }, { v: 'intenso', t: 'Intenso' }]} onChange={(v) => fxPresets[v] && cambiar((x) => void (x.fx = JSON.parse(JSON.stringify(fxPresets[v]))))} />
+          <Segmentado valor={e.fx.preset} opciones={[{ v: 'ninguno', t: 'Sin efectos' }, { v: 'suave', t: 'Suave' }, { v: 'intenso', t: 'Intenso' }, { v: 'epico', t: 'Épico', titulo: 'Para reggaetón y música de club: mucha energía' }]} onChange={(v) => fxPresets[v] && cambiar((x) => void (x.fx = JSON.parse(JSON.stringify(fxPresets[v]))))} />
         </Fila>
 
         <div className="mt-3 text-[12px] font-semibold text-soft">Al entrar la canción</div>
         <Efecto titulo="Filtro que se abre" ayuda="La intro suena apagada, sin agudos, y se va abriendo hasta que entra la canción." on={e.fx.intro.filtro.on} onChange={(v) => setFx((f) => void (f.intro.filtro.on = v))}>
+          <Fila etiqueta="Tipo"><Segmentado valor={e.fx.intro.filtro.tipo} opciones={[{ v: 'lp', t: 'Tapado→claro', titulo: 'Empieza sin agudos' }, { v: 'hp', t: 'Fino→lleno', titulo: 'Empieza sin graves' }]} onChange={(v) => setFx((f) => void (f.intro.filtro.tipo = v))} /></Fila>
           <Deslizador etiqueta="Tarda en abrirse" valor={e.fx.intro.filtro.compases} min={1} max={8} formato={(v) => `${v} compases`} onChange={(v) => setFx((f) => void (f.intro.filtro.compases = v), 'fx1')} />
           <Deslizador etiqueta="Empieza muy apagado en" valor={e.fx.intro.filtro.desde_hz} min={150} max={3000} paso={50} formato={(v) => `${v} Hz`} onChange={(v) => setFx((f) => void (f.intro.filtro.desde_hz = v), 'fx2')} ayuda="Cuanto más bajo, más tapado suena al principio." />
         </Efecto>
@@ -209,7 +289,42 @@ export function Inspector(): JSX.Element | null {
           <Deslizador etiqueta="Cantidad" valor={e.fx.intro.bateria.nivel_db} min={-9} max={6} paso={0.5} formato={(v) => `${v > 0 ? '+' : ''}${v} dB`} onChange={(v) => setFx((f) => void (f.intro.bateria.nivel_db = v), 'fx7')} />
         </Efecto>
 
-        <div className="mt-4 text-[12px] font-semibold text-soft">Al terminar (necesitan la acapela final)</div>
+        <Efecto titulo="Crescendo" ayuda="La intro va subiendo de volumen poco a poco hasta la entrada." on={e.fx.intro.crescendo.on} onChange={(v) => setFx((f) => void (f.intro.crescendo.on = v))}>
+          <Deslizador etiqueta="Empieza en" valor={e.fx.intro.crescendo.desde_db} min={-30} max={-3} formato={(v) => `${v} dB`} onChange={(v) => setFx((f) => void (f.intro.crescendo.desde_db = v), 'fxc1')} />
+        </Efecto>
+        <Efecto titulo="Bombo extra" ayuda="Un bombo en cada tiempo para dar pegada, estilo club y reggaetón." on={e.fx.intro.bombo.on} onChange={(v) => setFx((f) => void (f.intro.bombo.on = v))}>
+          <Deslizador etiqueta="Volumen" valor={e.fx.intro.bombo.nivel_db} min={-24} max={-3} formato={(v) => `${v} dB`} onChange={(v) => setFx((f) => void (f.intro.bombo.nivel_db = v), 'fxc2')} />
+        </Efecto>
+        <Efecto titulo="Bombeo" ayuda="El sonido «respira»: baja con cada bombo y vuelve a subir (sidechain)." on={e.fx.intro.bombeo.on} onChange={(v) => setFx((f) => void (f.intro.bombeo.on = v))}>
+          <Deslizador etiqueta="Profundidad" valor={Math.round(e.fx.intro.bombeo.profundidad * 100)} min={10} max={90} formato={(v) => `${v} %`} onChange={(v) => setFx((f) => void (f.intro.bombeo.profundidad = v / 100), 'fxc3')} />
+        </Efecto>
+        <Efecto titulo="Platillo invertido" ayuda="Un platillo al revés que crece hasta el golpe de entrada." on={e.fx.intro.platillo_inv.on} onChange={(v) => setFx((f) => void (f.intro.platillo_inv.on = v))}>
+          <Fila etiqueta="Dura"><Segmentado valor={e.fx.intro.platillo_inv.tiempos} opciones={[{ v: 4, t: '4' }, { v: 8, t: '8' }, { v: 16, t: '16 tiempos' }]} onChange={(v) => setFx((f) => void (f.intro.platillo_inv.tiempos = v))} /></Fila>
+          <Deslizador etiqueta="Volumen" valor={e.fx.intro.platillo_inv.nivel_db} min={-24} max={-3} formato={(v) => `${v} dB`} onChange={(v) => setFx((f) => void (f.intro.platillo_inv.nivel_db = v), 'fxc4')} />
+        </Efecto>
+        <Efecto titulo="Sirena que sube" ayuda="Un tono que sube y sube antes de entrar, como en los builds de club." on={e.fx.intro.sirena.on} onChange={(v) => setFx((f) => void (f.intro.sirena.on = v))}>
+          <Deslizador etiqueta="Dura" valor={e.fx.intro.sirena.compases} min={1} max={4} formato={(v) => `${v} compases`} onChange={(v) => setFx((f) => void (f.intro.sirena.compases = v), 'fxc5')} />
+          <Deslizador etiqueta="Volumen" valor={e.fx.intro.sirena.nivel_db} min={-36} max={-8} formato={(v) => `${v} dB`} onChange={(v) => setFx((f) => void (f.intro.sirena.nivel_db = v), 'fxc6')} />
+        </Efecto>
+        <Efecto titulo="Tartamudeo" ayuda="Un trocito se repite una y otra vez justo antes de entrar (beat repeat)." on={e.fx.intro.tartamudeo.on} onChange={(v) => setFx((f) => void (f.intro.tartamudeo.on = v))}>
+          <Fila etiqueta="Dura"><Segmentado valor={e.fx.intro.tartamudeo.tiempos} opciones={[{ v: 1, t: '1 tiempo' }, { v: 2, t: '2' }, { v: 4, t: '4' }]} onChange={(v) => setFx((f) => void (f.intro.tartamudeo.tiempos = v))} /></Fila>
+          <Fila etiqueta="Trocito"><Segmentado valor={e.fx.intro.tartamudeo.division} opciones={[{ v: 0.5, t: '½' }, { v: 0.25, t: '¼' }, { v: 0.125, t: '⅛' }]} onChange={(v) => setFx((f) => void (f.intro.tartamudeo.division = v))} /></Fila>
+        </Efecto>
+        <Efecto titulo="Freno de vinilo" ayuda="La intro se frena y el tono cae justo antes de entrar." on={e.fx.intro.freno.on} onChange={(v) => setFx((f) => void (f.intro.freno.on = v))}>
+          <Fila etiqueta="Dura"><Segmentado valor={e.fx.intro.freno.tiempos} opciones={[{ v: 1, t: '1 tiempo' }, { v: 2, t: '2' }, { v: 4, t: '4' }]} onChange={(v) => setFx((f) => void (f.intro.freno.tiempos = v))} /></Fila>
+        </Efecto>
+        <Efecto titulo="Caída de graves" ayuda="Un sub grave largo que retumba justo después del golpe." on={e.fx.intro.caida_graves.on} onChange={(v) => setFx((f) => void (f.intro.caida_graves.on = v))}>
+          <Deslizador etiqueta="Volumen" valor={e.fx.intro.caida_graves.nivel_db} min={-24} max={-3} formato={(v) => `${v} dB`} onChange={(v) => setFx((f) => void (f.intro.caida_graves.nivel_db = v), 'fxc7')} />
+        </Efecto>
+        <Efecto titulo="Bocina de aire" ayuda="Tres toques de bocina al entrar, el clásico de reggaetón y club." on={e.fx.intro.bocina.on} onChange={(v) => setFx((f) => void (f.intro.bocina.on = v))}>
+          <Deslizador etiqueta="Volumen" valor={e.fx.intro.bocina.nivel_db} min={-30} max={-3} formato={(v) => `${v} dB`} onChange={(v) => setFx((f) => void (f.intro.bocina.nivel_db = v), 'fxc8')} />
+        </Efecto>
+      </Seccion>
+
+      <Seccion titulo="Efectos de salida" descripcion="Para el final de tu extended. Necesitan la acapela final activada." resumen={[e.fx.salida.eco.on, e.fx.salida.reverb.on, e.fx.salida.filtro.on, e.fx.salida.bateria.on, e.fx.salida.corte_ritmico.on, e.fx.salida.freno.on, e.fx.salida.impacto_final.on].filter(Boolean).length + ' activos'}>
+        <div className="mb-2 flex gap-2">
+          <Btn tam="sm" icono="play" onClick={() => escuchar('fin')} titulo="Escucha el final (F)">Escuchar el final</Btn>
+        </div>
         <Efecto titulo="Eco en la voz" ayuda="La última frase se repite y se va apagando como un eco." on={e.fx.salida.eco.on} onChange={(v) => setFx((f) => void (f.salida.eco.on = v))}>
           <Fila etiqueta="Velocidad"><Segmentado valor={e.fx.salida.eco.division} opciones={[{ v: 0.5, t: 'Rápido' }, { v: 0.75, t: 'Medio' }, { v: 1, t: 'Lento' }]} onChange={(v) => setFx((f) => void (f.salida.eco.division = v))} /></Fila>
           <Deslizador etiqueta="Volumen del eco" valor={e.fx.salida.eco.mezcla_db} min={-18} max={0} formato={(v) => `${v} dB`} onChange={(v) => setFx((f) => void (f.salida.eco.mezcla_db = v), 'fx8')} />
@@ -227,6 +342,12 @@ export function Inspector(): JSX.Element | null {
         </Efecto>
         <Efecto titulo="Voz cortada al ritmo" ayuda="La voz se corta como una puerta rítmica en el último compás." on={e.fx.salida.corte_ritmico.on} onChange={(v) => setFx((f) => void (f.salida.corte_ritmico.on = v))}>
           <Fila etiqueta="Dura"><Segmentado valor={e.fx.salida.corte_ritmico.compases} opciones={[{ v: 1, t: '1' }, { v: 2, t: '2' }, { v: 4, t: '4 compases' }]} onChange={(v) => setFx((f) => void (f.salida.corte_ritmico.compases = v))} /></Fila>
+        </Efecto>
+        <Efecto titulo="Freno de vinilo" ayuda="El final se frena y el tono cae, como parar un disco." on={e.fx.salida.freno.on} onChange={(v) => setFx((f) => void (f.salida.freno.on = v))}>
+          <Fila etiqueta="Dura"><Segmentado valor={e.fx.salida.freno.tiempos} opciones={[{ v: 1, t: '1 tiempo' }, { v: 2, t: '2' }, { v: 4, t: '4' }]} onChange={(v) => setFx((f) => void (f.salida.freno.tiempos = v))} /></Fila>
+        </Efecto>
+        <Efecto titulo="Golpe final" ayuda="Un golpe grave con platillo cuando acaba la voz." on={e.fx.salida.impacto_final.on} onChange={(v) => setFx((f) => void (f.salida.impacto_final.on = v))}>
+          <Deslizador etiqueta="Volumen" valor={e.fx.salida.impacto_final.nivel_db} min={-24} max={-3} formato={(v) => `${v} dB`} onChange={(v) => setFx((f) => void (f.salida.impacto_final.nivel_db = v), 'fxs1')} />
         </Efecto>
       </Seccion>
 

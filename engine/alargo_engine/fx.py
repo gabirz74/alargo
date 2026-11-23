@@ -16,6 +16,15 @@ FX_APAGADO = {
         "corte": {"on": False, "tiempos": 1},                                    # silencio justo antes de la voz
         "redoble": {"on": False, "tiempos": 4, "nivel_db": -12},                 # redoble de caja que acelera
         "bateria": {"on": False, "nivel_db": 0},                                 # refuerza la batería de la intro
+        "platillo_inv": {"on": False, "tiempos": 8, "nivel_db": -14},            # platillo invertido que sube hasta el golpe
+        "sirena": {"on": False, "compases": 2, "nivel_db": -22},                 # sirena que sube de tono
+        "bocina": {"on": False, "nivel_db": -12},                                # bocina de aire (3 toques) al entrar
+        "caida_graves": {"on": False, "nivel_db": -8},                           # sub grave largo tras el golpe
+        "freno": {"on": False, "tiempos": 1},                                    # freno de vinilo en el último tiempo
+        "tartamudeo": {"on": False, "tiempos": 1, "division": 0.25},             # repite un trocito al final de la intro
+        "bombeo": {"on": False, "profundidad": 0.5},                             # el sonido «respira» con cada bombo
+        "bombo": {"on": False, "nivel_db": -12},                                 # bombo extra en cada tiempo
+        "crescendo": {"on": False, "desde_db": -15},                             # la intro sube de volumen poco a poco
     },
     "salida": {
         "eco": {"on": False, "division": 0.75, "mezcla_db": -8},                 # eco en la última frase de la voz
@@ -23,6 +32,8 @@ FX_APAGADO = {
         "filtro": {"on": False, "hasta_hz": 500, "compases": 2},                 # filtro que se cierra
         "bateria": {"on": False, "nivel_db": -6},                                # batería de fondo bajo la acapela
         "corte_ritmico": {"on": False, "compases": 1, "division": 0.5},          # voz cortada al ritmo
+        "freno": {"on": False, "tiempos": 1},                                    # freno de vinilo al final
+        "impacto_final": {"on": False, "nivel_db": -12},                         # golpe final
     },
 }
 
@@ -52,6 +63,16 @@ PRESETS["intenso"] = _preset(
      "redoble": {"tiempos": 4, "nivel_db": -12}, "bateria": {"nivel_db": 0}},
     {"eco": {"division": 0.75, "mezcla_db": -6}, "reverb": {"seg": 3.0, "mezcla": 0.3}, "filtro": {"hasta_hz": 600, "compases": 2},
      "bateria": {"nivel_db": -6}},
+)
+
+PRESETS["epico"] = _preset(
+    "epico",
+    {"filtro": {"tipo": "lp", "desde_hz": 350, "compases": 6}, "riser": {"compases": 2, "nivel_db": -12},
+     "platillo_inv": {"tiempos": 8, "nivel_db": -13}, "impacto": {"nivel_db": -7}, "caida_graves": {"nivel_db": -7},
+     "redoble": {"tiempos": 4, "nivel_db": -11}, "bateria": {"nivel_db": 2}, "bombo": {"nivel_db": -13},
+     "bombeo": {"profundidad": 0.4}, "crescendo": {"desde_db": -14}, "bocina": {"nivel_db": -13}},
+    {"eco": {"division": 0.75, "mezcla_db": -6}, "reverb": {"seg": 3.0, "mezcla": 0.3}, "filtro": {"hasta_hz": 600, "compases": 2},
+     "bateria": {"nivel_db": -6}, "impacto_final": {"nivel_db": -10}},
 )
 
 FX_BASE = copy.deepcopy(PRESETS["suave"])
@@ -185,3 +206,111 @@ def puerta_ritmica(x, T, division, rampa_ms=4):
     r = max(2, int(rampa_ms / 1000 * SR))
     env = np.convolve(env, np.ones(r) / r, mode="same")
     return x * env[:, None]
+
+
+# ----------------------------------------------------------------------------- efectos nuevos
+def platillo_invertido(n, pico, semilla=21):
+    """Platillo (ruido agudo) al revés: crece hasta el final y se corta en el golpe."""
+    r = _rng(semilla)
+    t = np.arange(n) / SR
+    x = r.standard_normal((n, 2)).astype(np.float32)
+    x = barrido_filtro(x, 4000, 4000, "hp")
+    env = np.exp((t - t[-1]) / 0.7) * (0.4 + 0.6 * t / max(t[-1], 1e-6))
+    x = x * env[:, None]
+    return (x / (np.abs(x).max() + 1e-9) * pico).astype(np.float32)
+
+
+def sirena(n, pico, f0=300.0, f1=1500.0):
+    """Tono que sube exponencialmente (con un poco de vibrato) y crece en volumen."""
+    t = np.arange(n) / SR
+    f = f0 * (f1 / f0) ** (t / max(t[-1], 1e-6)) * (1 + 0.012 * np.sin(2 * np.pi * 5.5 * t))
+    fase = 2 * np.pi * np.cumsum(f) / SR
+    y = (np.sin(fase) + 0.35 * np.sin(2 * fase)) * (np.linspace(0, 1, n) ** 1.6)
+    y = np.stack([y, y], 1).astype(np.float32)
+    return (y / (np.abs(y).max() + 1e-9) * pico).astype(np.float32)
+
+
+def bocina(pico, T):
+    """Bocina de aire: tres toques (corto, corto, largo) con armónicos ricos. Devuelve el audio y los tiempos."""
+    dur = max(1.6, 4 * T)
+    n = int(dur * SR)
+    out = np.zeros((n, 2), dtype=np.float32)
+    toques = [(0.0, 0.22), (0.30, 0.22), (0.60, 0.95)]
+    base = [370.0, 466.0, 554.0]
+    for ini, largo in toques:
+        i = int(ini * SR)
+        m = min(int(largo * SR), n - i)
+        t = np.arange(m) / SR
+        y = np.zeros(m)
+        for f in base:
+            fase = 2 * np.pi * f * t
+            y += np.sign(np.sin(fase)) * 0.5 + np.sin(2 * fase) * 0.3 + np.sin(3 * fase) * 0.25
+        env = np.minimum(1, t / 0.012) * np.minimum(1, (largo - t) / 0.05)
+        out[i:i + m] += (y * env)[:, None].astype(np.float32)
+    sos = butter(2, 6000 / (SR / 2), output="sos")
+    out = sosfilt(sos, out, axis=0).astype(np.float32)
+    return out / (np.abs(out).max() + 1e-9) * pico
+
+
+def sub_grave(pico, seg=1.3):
+    n = int(seg * SR)
+    t = np.arange(n) / SR
+    f = 40 + 30 * np.exp(-t / 0.15)
+    y = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t / 0.55) * (1 - np.exp(-t / 0.004))
+    return (np.stack([y, y], 1) * pico).astype(np.float32)
+
+
+def freno(x):
+    """Freno de vinilo: la reproducción se va frenando hasta pararse (el tono cae)."""
+    n = len(x)
+    if n < 64:
+        return x
+    t = np.linspace(0, 1, n)
+    vel = np.clip(1 - t ** 1.5, 0.0, 1.0)
+    pos = np.cumsum(vel)
+    pos = pos / pos[-1] * (n * 0.55)
+    idx = np.arange(n)
+    y = np.stack([np.interp(pos, idx, x[:, c]) for c in range(x.shape[1])], 1)
+    return (y * ((1 - t) ** 0.6)[:, None]).astype(np.float32)
+
+
+def tartamudeo(x, T, division):
+    """Repite una y otra vez el primer trocito de `x` (efecto «beat repeat»)."""
+    m = max(int(T * division * SR), 256)
+    if m >= len(x):
+        return x
+    trozo = x[:m].copy()
+    r = int(0.004 * SR)
+    trozo[:r] *= np.linspace(0, 1, r)[:, None]
+    trozo[-r:] *= np.linspace(1, 0, r)[:, None]
+    reps = int(np.ceil(len(x) / m))
+    return np.tile(trozo, (reps, 1))[: len(x)].astype(np.float32)
+
+
+def bombeo(x, T, profundidad):
+    """Sidechain de mentira: el volumen cae con cada bombo (cada tiempo) y se recupera."""
+    n = len(x)
+    fase = (np.arange(n) / SR) % T
+    g = 1 - profundidad * np.exp(-fase / 0.11) * (1 - np.exp(-fase / 0.004))
+    return (x * g[:, None]).astype(np.float32)
+
+
+def bombo_extra(n, T, pico):
+    out = np.zeros((n, 2), dtype=np.float32)
+    m = int(0.2 * SR)
+    t = np.arange(m) / SR
+    f = 48 + 90 * np.exp(-t / 0.035)
+    k = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t / 0.09) * (1 - np.exp(-t / 0.002))
+    k = (np.stack([k, k], 1) * pico).astype(np.float32)
+    i = 0.0
+    while int(i * SR) < n:
+        a = int(i * SR)
+        e = min(n, a + m)
+        out[a:e] += k[: e - a]
+        i += T
+    return out
+
+
+def crescendo(x, desde_db):
+    g = 10 ** (np.linspace(desde_db, 0, len(x)) / 20)
+    return (x * g[:, None]).astype(np.float32)

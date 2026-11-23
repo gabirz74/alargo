@@ -25,6 +25,14 @@ EDICION_BASE = {
         "level_cap_db": 5.0,
         "gain_db": 0.0,
         "fade_in_ms": 0.0,
+        "fuente_s": None,          # de dónde se toma el audio de la intro (None = el mismo compás donde entra la frase)
+        "capas": {                 # mezclador: cada capa puede salir de un trozo distinto de la canción
+            "on": False,
+            "bateria": {"on": True, "desde_s": None, "nivel_db": 0.0},
+            "bajo": {"on": True, "desde_s": None, "nivel_db": 0.0},
+            "melodia": {"on": True, "desde_s": None, "nivel_db": 0.0},
+            "voz": {"on": False, "desde_s": None, "nivel_db": -6.0, "efecto": True},
+        },
     },
     "song": {
         "start_s": 0.0,            # dónde retoma la canción original (inicio de la frase con su anacrusa)
@@ -132,24 +140,46 @@ def render(S, an, ed):
     # ---- intro
     intro = None
     L = 0.0
+    pico_ref = float(np.percentile(np.abs(original[::8]), 99.5)) + 1e-6
     if it["enabled"]:
-        td = float(it["start_s"])
+        td = float(it["start_s"])                 # compás donde arranca la frase en la canción (el «golpe» de entrada)
+        fs = float(it["fuente_s"]) if it.get("fuente_s") is not None else td   # de dónde se toma el audio de la intro
         N = it["bars"]
         pre, post = it["extra_pre"], it["extra_post"]
         L = N * T4 + (R - td)
         if it["auto_extra"] and not it["loop_bars"] and L / T < it["min_beats"] and F is not None:
             med = float(np.median(F[:, 1]))
-            d_bar = int(round((td - t_compas(g, j0)) / T4))
+            d_bar = int(round((fs - t_compas(g, j0)) / T4))
             if 1 <= d_bar <= len(F) and F[d_bar - 1, 1] >= med - 12:
                 pre, post = 1, 0
             elif 0 <= d_bar + N < len(F) and F[d_bar + N, 1] >= med - 12:
                 pre, post = 0, 1
-        ts = td - pre * T4
+        ts = fs - pre * T4
         L += (pre + post) * T4
+        capas = it["capas"]
+        usa_capas = bool(capas["on"])
         src = fuente(S, it["source"])
+
+        def tomar(a, b):
+            """Audio de la intro entre `a` y `b` (segundos de la canción): una pista o la mezcla de capas."""
+            if not usa_capas:
+                return corte(src, a, b)
+            y = None
+            for nombre, stem in (("bateria", S["drums"]), ("bajo", S["bass"]), ("melodia", S["other"]), ("voz", S["voz"])):
+                c = capas[nombre]
+                if not c["on"]:
+                    continue
+                off = (float(c["desde_s"]) - fs) if c.get("desde_s") is not None else 0.0
+                seg = corte(stem, a + off, b + off) * efectos._db(c["nivel_db"])
+                if nombre == "voz" and c.get("efecto"):
+                    seg = efectos.reverb(seg, 1.8, 0.35)[: len(seg)]
+                    seg = efectos.barrido_filtro(seg, 5000, 5000, "lp")
+                y = seg if y is None else y + seg
+            return y if y is not None else np.zeros((int(round((b - a) * SR)), 2), dtype=np.float32)
+
         if it["loop_bars"]:
             k = it["loop_bars"] * T4
-            base = corte(src, ts, ts + k + xf_s)          # el trozo + cola para empalmar
+            base = tomar(ts, ts + k + xf_s)          # el trozo + cola para empalmar
             n_rep = int(np.ceil(L / k))
             paso = int(round(k * SR))
             buf = np.zeros((n_rep * paso + xf + 8, 2), dtype=np.float32)
@@ -165,9 +195,9 @@ def render(S, an, ed):
                 buf[a:a + n] += seg[:n]
             intro = buf[: int(round(L * SR)) + xf]
         else:
-            intro = corte(src, ts, ts + L + xf_s)
+            intro = tomar(ts, ts + L + xf_s)
         fxi = ed["fx"]["intro"]
-        if fxi["bateria"]["on"] and not it["loop_bars"] and it["source"] != "drums":
+        if fxi["bateria"]["on"] and not it["loop_bars"] and it["source"] != "drums" and not usa_capas:
             intro = intro + corte(S["drums"], ts, ts + L + xf_s) * efectos._db(fxi["bateria"]["nivel_db"])
         obj = sonoridad(corte(original, td, td + N * T4))
         gan = 1.0
@@ -179,12 +209,25 @@ def render(S, an, ed):
             f = min(len(intro), int(it["fade_in_ms"] / 1000 * SR))
             intro[:f] *= np.linspace(0, 1, f)[:, None]
         nL = int(round(L * SR))
+        # --- efectos sobre la propia intro (de dentro hacia fuera)
+        if fxi["crescendo"]["on"]:
+            intro[:nL] = efectos.crescendo(intro[:nL], float(fxi["crescendo"]["desde_db"]))
+        if fxi["bombeo"]["on"]:
+            intro[:nL] = efectos.bombeo(intro[:nL], T, float(fxi["bombeo"]["profundidad"]))
+        if fxi["bombo"]["on"]:
+            intro[:nL] += efectos.bombo_extra(nL, T, pico_ref * efectos._db(fxi["bombo"]["nivel_db"]))
         fl = fxi["filtro"]
         if fl["on"]:
             n_sw = int(fl["compases"] * T4 * SR)
             f0 = float(fl["desde_hz"])
-            f1, f0 = (20000.0, f0) if fl["tipo"] == "lp" else (30.0, f0)
+            f1 = 20000.0 if fl["tipo"] == "lp" else 30.0
             intro[:nL] = efectos.barrido_filtro(intro[:nL], f0, f1, fl["tipo"], mantener=max(0, nL - n_sw))
+        if fxi["tartamudeo"]["on"]:
+            m = min(nL, int(fxi["tartamudeo"]["tiempos"] * T * SR))
+            intro[nL - m:nL] = efectos.tartamudeo(intro[nL - m:nL], T, float(fxi["tartamudeo"]["division"]))
+        if fxi["freno"]["on"]:
+            m = min(nL, int(fxi["freno"]["tiempos"] * T * SR))
+            intro[nL - m:nL] = efectos.freno(intro[nL - m:nL])
         if fxi["corte"]["on"]:
             m = min(nL, int(fxi["corte"]["tiempos"] * T * SR))
             r = int(0.012 * SR)
@@ -203,23 +246,36 @@ def render(S, an, ed):
         out = unir(intro, cuerpo, xf)
         t_cuerpo = L
         # ---- efectos que se superponen en el golpe de entrada (el compás donde empieza la frase cantada)
-        fxi = ed["fx"]["intro"]
         t_hit = (N + pre + post) * T4
         i_hit = int(round(t_hit * SR))
-        pico_ref = float(np.percentile(np.abs(original[::8]), 99.5)) + 1e-6
+
+        def sumar(a, y):
+            a = max(0, a)
+            m = min(len(y), len(out) - a)
+            if m > 0:
+                out[a:a + m] += y[:m]
+
         if i_hit < len(out):
             if fxi["riser"]["on"]:
                 n_r = min(i_hit, int(fxi["riser"]["compases"] * T4 * SR))
                 ref = out[max(0, i_hit - 4 * SR):i_hit]
                 rms = float(np.sqrt((ref ** 2).mean())) if len(ref) else 0.05
-                out[i_hit - n_r:i_hit] += efectos.ruido_riser(n_r, rms * efectos._db(fxi["riser"]["nivel_db"]))
+                sumar(i_hit - n_r, efectos.ruido_riser(n_r, rms * efectos._db(fxi["riser"]["nivel_db"])))
+            if fxi["sirena"]["on"]:
+                n_s2 = min(i_hit, int(fxi["sirena"]["compases"] * T4 * SR))
+                sumar(i_hit - n_s2, efectos.sirena(n_s2, pico_ref * efectos._db(fxi["sirena"]["nivel_db"])))
+            if fxi["platillo_inv"]["on"]:
+                n_p = min(i_hit, int(fxi["platillo_inv"]["tiempos"] * T * SR))
+                sumar(i_hit - n_p, efectos.platillo_invertido(n_p, pico_ref * efectos._db(fxi["platillo_inv"]["nivel_db"])))
             if fxi["redoble"]["on"]:
                 m = min(i_hit, int(fxi["redoble"]["tiempos"] * T * SR))
-                out[i_hit - m:i_hit] += efectos.redoble(m, T, fxi["redoble"]["tiempos"], pico_ref * efectos._db(fxi["redoble"]["nivel_db"]))
+                sumar(i_hit - m, efectos.redoble(m, T, fxi["redoble"]["tiempos"], pico_ref * efectos._db(fxi["redoble"]["nivel_db"])))
             if fxi["impacto"]["on"]:
-                h = efectos.impacto(pico_ref * efectos._db(fxi["impacto"]["nivel_db"]))
-                m = min(len(h), len(out) - i_hit)
-                out[i_hit:i_hit + m] += h[:m]
+                sumar(i_hit, efectos.impacto(pico_ref * efectos._db(fxi["impacto"]["nivel_db"])))
+            if fxi["caida_graves"]["on"]:
+                sumar(i_hit, efectos.sub_grave(pico_ref * efectos._db(fxi["caida_graves"]["nivel_db"])))
+            if fxi["bocina"]["on"]:
+                sumar(i_hit, efectos.bocina(pico_ref * efectos._db(fxi["bocina"]["nivel_db"]), T))
         info["golpe_s"] = round(t_hit, 3)
     else:
         out = cuerpo
@@ -250,6 +306,9 @@ def render(S, an, ed):
         if fxs["corte_ritmico"]["on"]:
             n_g = min(len(cola), int(fxs["corte_ritmico"]["compases"] * T4 * SR))
             cola[-n_g:] = efectos.puerta_ritmica(cola[-n_g:], T, float(fxs["corte_ritmico"]["division"]))
+        if fxs["freno"]["on"]:
+            m = min(len(cola), int(fxs["freno"]["tiempos"] * T * SR))
+            cola[-m:] = efectos.freno(cola[-m:])
         cola = cola.astype(np.float32)
         antes_fade = cola.copy()
         f = min(len(cola), int(max(ac["tail_fade_ms"], 5) / 1000 * SR))
@@ -267,6 +326,8 @@ def render(S, an, ed):
             wet_rev = rv[len(cola):]
             wet_rev_dentro = rv[:len(cola)] - cola
             extra = max(extra, len(wet_rev) / SR)
+        if fxs["impacto_final"]["on"]:
+            extra = max(extra, 1.6)
         if extra > 0:
             total = len(cola) + int(extra * SR)
             ext = np.zeros((total, 2), dtype=np.float32)
@@ -276,6 +337,11 @@ def render(S, an, ed):
             if wet_rev is not None:
                 ext[:len(cola)] += wet_rev_dentro
                 ext[len(cola):len(cola) + len(wet_rev)] += wet_rev[: total - len(cola)]
+            if fxs["impacto_final"]["on"]:
+                h = efectos.impacto(pico_ref * efectos._db(fxs["impacto_final"]["nivel_db"]))
+                a0 = max(0, len(cola) - int(0.08 * SR))
+                m = min(len(h), total - a0)
+                ext[a0:a0 + m] += h[:m]
             ff = min(len(ext), int(0.35 * SR))
             ext[-ff:] *= np.linspace(1, 0, ff)[:, None]
             cola = ext

@@ -12,7 +12,7 @@ const B_Y = A_Y + A_H + 36
 const B_H = 100
 const TOTAL = B_Y + B_H + 6
 
-type Hit = { tipo: 'R' | 'intro' | 'ac' | 'acFin' | 'playA' | 'playB'; x0: number; x1: number; y0: number; y1: number }
+type Hit = { tipo: 'R' | 'intro' | 'introFin' | 'ac' | 'acFin' | 'playA' | 'playB'; x0: number; x1: number; y0: number; y1: number }
 type Colores = Record<'surface' | 'sunken' | 'ink' | 'soft' | 'faint' | 'line' | 'accent' | 'graphite' | 'inst', string>
 
 let cacheColores: { tema: string; c: Colores } | null = null
@@ -73,6 +73,7 @@ export function Timeline(): JSX.Element {
   const hits = useRef<Hit[]>([])
   const arrastre = useRef<null | { tipo: Hit['tipo']; grab: number }>(null)
   const scrollRef = useRef(0)
+  const seleccion = useRef<null | { a: number; b: number }>(null)
   const [cursor, setCursor] = useState('default')
 
   const abierto = useStore((s) => s.abierto)
@@ -256,7 +257,7 @@ export function Timeline(): JSX.Element {
     }
     // intro
     if (e.intro.enabled) {
-      const td = e.intro.start_s
+      const td = e.intro.fuente_s ?? e.intro.start_s
       const x0 = X(td)
       const x1 = X(td + e.intro.bars * t4)
       ctx.fillStyle = C.graphite
@@ -274,7 +275,25 @@ export function Timeline(): JSX.Element {
       const tIn = ajustarTexto(ctx, [`Intro · ${e.intro.bars} compases`, 'Intro'], x1 - x0 - 16)
       if (tIn) ctx.fillText(tIn, x0 + 9, A_Y + 14.5)
       ctx.restore()
+      ctx.fillStyle = C.graphite
+      rr(ctx, x1 - 3, A_Y + 40, 5, A_H - 80, 3)
+      ctx.fill()
       lista.push({ tipo: 'intro', x0, x1, y0: A_Y, y1: A_Y + 26 })
+      lista.push({ tipo: 'introFin', x0: x1 - 7, x1: x1 + 7, y0: A_Y + 26, y1: A_Y + A_H })
+    }
+    // selección con el ratón (modo «elegir trozo»)
+    if (seleccion.current) {
+      const { a, b } = seleccion.current
+      const xa = X(Math.min(a, b))
+      const xb = X(Math.max(a, b))
+      ctx.fillStyle = C.accent
+      ctx.globalAlpha = 0.25
+      ctx.fillRect(xa, A_Y, xb - xa, A_H)
+      ctx.globalAlpha = 1
+      ctx.strokeStyle = C.accent
+      ctx.lineWidth = 2
+      ctx.strokeRect(xa, A_Y + 1, xb - xa, A_H - 2)
+      ctx.lineWidth = 1
     }
     // acapela
     if (e.acapela.enabled && e.acapela.start_s !== null) {
@@ -412,6 +431,7 @@ export function Timeline(): JSX.Element {
     const r = cvRef.current?.getBoundingClientRect()
     return ((clientX - (r?.left ?? 0)) + scrollRef.current - PADL) / pps
   }
+  const t0Mov = (clientX: number): number => tiempoDe(clientX)
   const hitEn = (x: number, y: number): Hit | null => hits.current.find((h) => x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1) ?? null
 
   function alPulsar(ev: React.PointerEvent<HTMLCanvasElement>): void {
@@ -432,9 +452,17 @@ export function Timeline(): JSX.Element {
       sucio.current = true
       return
     }
+    if (useStore.getState().seleccionando && y >= A_Y && y <= A_Y + A_H) {
+      ev.currentTarget.setPointerCapture(ev.pointerId)
+      const ini = snapBar(an, clamp(t, 0, an.duracion_s))
+      seleccion.current = { a: ini, b: ini }
+      sucio.current = true
+      setCursor('crosshair')
+      return
+    }
     if (h) {
       ev.currentTarget.setPointerCapture(ev.pointerId)
-      const ref = h.tipo === 'R' ? e.song.start_s : h.tipo === 'intro' ? e.intro.start_s : h.tipo === 'ac' ? (e.acapela.start_s ?? 0) : (e.acapela.start_s ?? 0)
+      const ref = h.tipo === 'R' ? e.song.start_s : h.tipo === 'intro' || h.tipo === 'introFin' ? (e.intro.fuente_s ?? e.intro.start_s) : (e.acapela.start_s ?? 0)
       arrastre.current = { tipo: h.tipo, grab: t - ref }
       ponerArrastre(true)
       setCursor('grabbing')
@@ -456,21 +484,30 @@ export function Timeline(): JSX.Element {
     const x = ev.clientX - r.left
     const y = ev.clientY - r.top
     const d = arrastre.current
+    if (seleccion.current) {
+      seleccion.current.b = clamp(t0Mov(ev.clientX), 0, an.duracion_s)
+      sucio.current = true
+      return
+    }
     if (!d) {
+      if (useStore.getState().seleccionando) {
+        setCursor('crosshair')
+        return
+      }
       const h = hitEn(x, y)
-      setCursor(h ? (h.tipo === 'R' || h.tipo === 'acFin' ? 'ew-resize' : h.tipo === 'playA' || h.tipo === 'playB' ? 'pointer' : 'grab') : y >= A_Y && y <= B_Y + B_H ? 'pointer' : 'default')
+      setCursor(h ? (h.tipo === 'R' || h.tipo === 'acFin' || h.tipo === 'introFin' ? 'ew-resize' : h.tipo === 'playA' || h.tipo === 'playB' ? 'pointer' : 'grab') : y >= A_Y && y <= B_Y + B_H ? 'pointer' : 'default')
       return
     }
     const t = tiempoDe(ev.clientX)
     const t4 = T4(an)
     const store = useStore.getState()
     if (d.tipo === 'intro') {
-      const td = clamp(snapBar(an, t - d.grab), 0, an.duracion_s - e8(abierto.edicion.intro.bars, t4))
-      store.cambiar((e) => {
-        const delta = td - e.intro.start_s
-        e.intro.start_s = td
-        e.song.start_s += delta
-      }, 'arrastre-intro')
+      const fs = clamp(snapBar(an, t - d.grab), 0, an.duracion_s - e8(abierto.edicion.intro.bars, t4))
+      store.elegirTrozo(fs)
+    } else if (d.tipo === 'introFin') {
+      const f0 = abierto.edicion.intro.fuente_s ?? abierto.edicion.intro.start_s
+      const bars = clamp(Math.round((t - f0) / t4), 1, 32)
+      store.cambiar((e) => void (e.intro.bars = bars), 'arrastre-introfin')
     } else if (d.tipo === 'ac') {
       const tc = clamp(snapBar(an, t - d.grab), t4, an.duracion_s - t4)
       store.cambiar((e) => void (e.acapela.start_s = tc), 'arrastre-ac')
@@ -489,6 +526,20 @@ export function Timeline(): JSX.Element {
   }
 
   function alSoltar(): void {
+    if (seleccion.current && an) {
+      const { a, b } = seleccion.current
+      seleccion.current = null
+      const ini = snapBar(an, Math.min(a, b))
+      const fin = snapBar(an, Math.max(a, b))
+      const bars = Math.round((fin - ini) / T4(an))
+      const st = useStore.getState()
+      st.setSeleccionando(false)
+      st.elegirTrozo(ini)
+      if (bars >= 1) st.cambiar((e) => void (e.intro.bars = clamp(bars, 1, 32)), 'trozo-bars')
+      setCursor('default')
+      sucio.current = true
+      return
+    }
     if (arrastre.current) {
       arrastre.current = null
       ponerArrastre(false)

@@ -18,7 +18,7 @@ type Preview = { info: InfoRender | null; picos: Picos | null; renderizando: boo
 type Instalacion = { activa: boolean; fase: string; fraction: number; detalle?: string; error?: string }
 export type Aviso = { id: number; texto: string; tipo: 'ok' | 'error' | 'info'; accion?: { texto: string; ruta?: string; abrir?: string } }
 type Vista = 'biblioteca' | 'editor' | 'ajustes'
-export type Zona = 'intro' | 'acapela' | 'fin'
+export type Zona = 'intro' | 'acapela' | 'fin' | 'introTodo'
 export type Resalte = { zona: Zona; hasta: number } | null
 
 type Store = {
@@ -34,6 +34,9 @@ type Store = {
   exportando: { activo: boolean; fraction: number }
   zoom: number // píxeles por segundo; 0 = ajustar a la ventana
   fxPresets: Record<string, Efectos>
+  seleccionando: boolean
+  setSeleccionando: (v: boolean) => void
+  elegirTrozo: (startS: number | null) => void
   autoEscuchar: boolean
   resalte: Resalte
   guiaVista: boolean
@@ -112,6 +115,7 @@ function conRejilla(a: Abierto, e: Edicion): Analisis {
 function sanear(e: Edicion, an: Analisis): void {
   const dur = an.duracion_s
   e.intro.start_s = clamp(e.intro.start_s, 0, Math.max(0, dur - 4))
+  if (e.intro.fuente_s !== null && e.intro.fuente_s !== undefined) e.intro.fuente_s = clamp(e.intro.fuente_s, 0, Math.max(0, dur - 4))
   e.song.start_s = clamp(e.song.start_s, 0, dur - 2)
   if (e.acapela.start_s !== null) e.acapela.start_s = clamp(e.acapela.start_s, 1, dur - 1)
   e.acapela.bars = clamp(Math.round(e.acapela.bars), 1, 64)
@@ -131,6 +135,7 @@ export const useStore = create<Store>((set, get) => ({
   exportando: { activo: false, fraction: 0 },
   zoom: 0,
   fxPresets: {},
+  seleccionando: false,
   autoEscuchar: leerLS('alargo-auto', '1') === '1',
   resalte: null,
   guiaVista: leerLS('alargo-guia', '1') === '1',
@@ -266,7 +271,8 @@ export const useStore = create<Store>((set, get) => ({
     const cambioAcap = JSON.stringify(a.edicion.acapela) !== JSON.stringify(nueva.acapela)
     const cambioFxIntro = JSON.stringify(a.edicion.fx?.intro) !== JSON.stringify(nueva.fx?.intro)
     const cambioFxSalida = JSON.stringify(a.edicion.fx?.salida) !== JSON.stringify(nueva.fx?.salida)
-    zonaPendiente = cambioIntro || cambioFxIntro ? 'intro' : cambioAcap ? 'acapela' : cambioFxSalida ? 'fin' : null
+    const cambioFuente = JSON.stringify([a.edicion.intro.fuente_s, a.edicion.intro.capas]) !== JSON.stringify([nueva.intro.fuente_s, nueva.intro.capas])
+    zonaPendiente = cambioFuente ? 'introTodo' : cambioIntro || cambioFxIntro ? 'intro' : cambioAcap ? 'acapela' : cambioFxSalida ? 'fin' : null
     const ahora = Date.now()
     const fusionar = !!clave && clave === ultimaClave && ahora - ultimoCambio < 900
     ultimaClave = clave ?? ''
@@ -334,6 +340,11 @@ export const useStore = create<Store>((set, get) => ({
   escucharZona(z) {
     const info = get().preview.info
     if (!info) return
+    if (z === 'introTodo') {
+      const sg = info.segmentos.find((x) => x.tipo === 'cancion')
+      audio.tramo(0, Math.min(info.duracion_s, (sg?.ini ?? 12) + 3))
+      return
+    }
     if (z === 'fin') {
       audio.tramo(Math.max(0, info.duracion_s - 14), info.duracion_s)
       return
@@ -345,6 +356,14 @@ export const useStore = create<Store>((set, get) => ({
     }
     if (z === 'intro') audio.tramo(Math.max(0, seg.ini - 5), seg.ini + 6)
     else audio.tramo(Math.max(0, seg.ini - 4), seg.ini + 8)
+  },
+
+  setSeleccionando: (v) => set({ seleccionando: v }),
+
+  elegirTrozo(startS) {
+    get().cambiar((e) => {
+      e.intro.fuente_s = startS === null || Math.abs(startS - e.intro.start_s) < 0.01 ? null : startS
+    }, 'trozo')
   },
 
   setAutoEscuchar(v) {

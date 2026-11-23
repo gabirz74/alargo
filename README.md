@@ -19,11 +19,11 @@ Funciona en **macOS** (Apple Silicon e Intel) y **Windows 10/11**.
 
 | Zona | Controles |
 | --- | --- |
-| Intro | activar/desactivar · sonido (instrumental completo, solo batería, batería y bajo) · duración (4–16 compases) · bucle de 1/2/4 compases · bloque de origen (arrastrable) · volumen automático o manual · entrada suave · compás extra automático o manual |
+| Intro | activar/desactivar · sonido (instrumental completo, solo batería, batería y bajo) · duración (4–16 compases) · bucle de 1/2/4 compases · trozo que suena (arrastrable, elegido con el ratón o entre las melodías que más se repiten) · mezcla por capas (batería, bajo, melodía y voz de adelanto de partes distintas) · volumen automático o manual · entrada suave · compás extra automático o manual |
 | Entrada de la voz | dónde retoma la canción (arrastrable) · ajuste fino de ±10 ms y ±1 tiempo · entradas de voz detectadas |
 | Acapela final | activar/desactivar · posición (arrastrable, de compás en compás) · estribillos detectados · duración (4/8/16/32 compases) · volumen · cuánto tarda en apagarse el instrumental · fundido final |
 | Ritmo | tempo detectado · afinado de la rejilla en milisegundos · desplazar la rejilla un tiempo |
-| Efectos de DJ | estilos Suave / Intenso / Sin efectos y cada efecto por separado: filtro que se abre, subida de ruido, golpe de entrada, silencio antes de la voz, redoble de caja, más batería · eco, reverb final, filtro que se cierra, batería de fondo bajo la acapela y voz cortada al ritmo |
+| Efectos de DJ | estilos Sin efectos / Suave / Intenso / Épico (reggaetón y club) y cada efecto por separado. Entrada: filtro que se abre, crescendo, bombo extra, bombeo, subida de ruido, platillo invertido, sirena, tartamudeo, freno de vinilo, silencio antes de la voz, redoble de caja, golpe de entrada, caída de graves, bocina de aire, más batería. Salida: eco, reverb, filtro que se cierra, batería de fondo, voz cortada al ritmo, freno de vinilo, golpe final |
 | Sonido | fundido en las uniones (0–100 ms) · limitador suave |
 | General | deshacer/rehacer · volver a la sugerencia IA · zoom · previsualización fiel (lo que oyes es lo que exportas) |
 
