@@ -124,6 +124,7 @@ const ATAJOS: [string, string][] = [
   ['[  ]', 'Ir al empalme anterior / siguiente'],
   ['I', 'Probar el empalme de la intro'],
   ['A', 'Probar el empalme de la acapela'],
+  ['F', 'Probar el final (eco, reverb…)'],
   ['R', 'Repetir el empalme en bucle'],
   ['L', 'Repetir toda la pista en bucle'],
   ['1  ·  2', 'Escuchar tu extended / la canción original'],
@@ -271,6 +272,9 @@ export function Editor(): JSX.Element {
       } else if (e.key.toLowerCase() === 'a') {
         st.escucharZona('acapela')
         hecho()
+      } else if (e.key.toLowerCase() === 'f') {
+        st.escucharZona('fin')
+        hecho()
       } else if (e.key.toLowerCase() === 'r') {
         audio.alternarBucleTramo()
         hecho()
@@ -309,6 +313,7 @@ export function Editor(): JSX.Element {
     <div className="flex h-full flex-col">
       <header className={`drag flex h-14 shrink-0 items-center gap-1 pr-4 ${mac ? 'pl-24' : 'pl-4'}`}>
         <BtnIcono n="atras" titulo="Volver a la biblioteca" onClick={() => void cerrar()} />
+        {proyecto.portada && <img src={`media://p/${abierto.id}/pistas/portada.jpg`} alt="" className="ml-1 h-9 w-9 rounded-lg object-cover" draggable={false} />}
         <div className="ml-1 min-w-0">
           <div className="display truncate text-[17px] font-semibold leading-tight">{an.titulo || proyecto.titulo}</div>
           <div className="truncate text-[12px] leading-tight text-soft">

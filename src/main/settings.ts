@@ -11,6 +11,7 @@ export type Ajustes = {
   bits: 16 | 24
   patron: string // {titulo} {artista} {bpm}
   preguntarDonde: boolean
+  portada: 'marca' | 'igual' | 'ninguna'
 }
 
 const PREDETERMINADOS = (): Ajustes => ({
@@ -21,7 +22,8 @@ const PREDETERMINADOS = (): Ajustes => ({
   kbps: 320,
   bits: 16,
   patron: '{titulo} (Extended)',
-  preguntarDonde: true
+  preguntarDonde: true,
+  portada: 'marca'
 })
 
 let cache: Ajustes | null = null

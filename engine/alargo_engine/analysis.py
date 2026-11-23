@@ -6,7 +6,7 @@ import time
 
 import numpy as np
 
-from . import dsp, project, separate
+from . import dsp, portada, project, separate
 from .common import SR, models_dir, run_ffmpeg
 from .render import EDICION_BASE, normalizar_edicion
 
@@ -150,6 +150,7 @@ def analizar(proj, entrada, calidad, prog, pistas_listas=None):
     # --- pistas y gráficos
     for n, x in S.items():
         project.guardar_pista(proj, n, x)
+    tiene_portada = portada.extraer(entrada, project.ruta(proj, "pistas", "portada.jpg"))
     escala = float(max(np.abs(S["original"]).max(), 1e-6))
     picos = dict(original=dsp.picos(S["original"], 100, escala), voz=dsp.picos(S["voz"], 100, escala), inst=dsp.picos(S["inst"], 100, escala))
     project.escribir_json(project.ruta(proj, "picos.json"), picos)
@@ -158,7 +159,7 @@ def analizar(proj, entrada, calidad, prog, pistas_listas=None):
     project.escribir_json(project.ruta(proj, "sugerencia.json"), sug)
     meta = dict(id=os.path.basename(os.path.abspath(proj)), titulo=titulo, artista=artista, archivo=entrada,
                 creado=time.strftime("%Y-%m-%dT%H:%M:%S"), calidad=calidad, duracion_s=an["duracion_s"], bpm=an["bpm"],
-                estado="listo", segundos_analisis=round(time.time() - t_ini))
+                estado="listo", portada=bool(tiene_portada), segundos_analisis=round(time.time() - t_ini))
     project.escribir_json(project.ruta(proj, "proyecto.json"), meta)
     shutil.rmtree(trabajo, ignore_errors=True)
     prog.set(1.0)

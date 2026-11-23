@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { audio } from './audio'
-import type { Ajustes, Analisis, Edicion, EstadoMotor, InfoRender, Picos, Proyecto } from './types'
+import type { Ajustes, Analisis, Edicion, Efectos, EstadoMotor, InfoRender, Picos, Proyecto } from './types'
 import { clamp, decodificarPicos, snapBar } from './util'
 
 type Abierto = {
@@ -18,7 +18,7 @@ type Preview = { info: InfoRender | null; picos: Picos | null; renderizando: boo
 type Instalacion = { activa: boolean; fase: string; fraction: number; detalle?: string; error?: string }
 export type Aviso = { id: number; texto: string; tipo: 'ok' | 'error' | 'info'; accion?: { texto: string; ruta?: string; abrir?: string } }
 type Vista = 'biblioteca' | 'editor' | 'ajustes'
-export type Zona = 'intro' | 'acapela'
+export type Zona = 'intro' | 'acapela' | 'fin'
 export type Resalte = { zona: Zona; hasta: number } | null
 
 type Store = {
@@ -33,6 +33,7 @@ type Store = {
   avisos: Aviso[]
   exportando: { activo: boolean; fraction: number }
   zoom: number // píxeles por segundo; 0 = ajustar a la ventana
+  fxPresets: Record<string, Efectos>
   autoEscuchar: boolean
   resalte: Resalte
   guiaVista: boolean
@@ -51,7 +52,7 @@ type Store = {
   deshacer: () => void
   rehacer: () => void
   restablecer: () => void
-  restablecerSeccion: (z: 'intro' | 'voz' | 'acapela' | 'sonido') => void
+  restablecerSeccion: (z: 'intro' | 'voz' | 'acapela' | 'sonido' | 'efectos') => void
   escucharZona: (z: Zona) => void
   setAutoEscuchar: (v: boolean) => void
   cerrarGuia: () => void
@@ -129,6 +130,7 @@ export const useStore = create<Store>((set, get) => ({
   avisos: [],
   exportando: { activo: false, fraction: 0 },
   zoom: 0,
+  fxPresets: {},
   autoEscuchar: leerLS('alargo-auto', '1') === '1',
   resalte: null,
   guiaVista: leerLS('alargo-guia', '1') === '1',
@@ -231,6 +233,7 @@ export const useStore = create<Store>((set, get) => ({
         deshacer: [],
         rehacer: []
       }
+      set({ fxPresets: r.fx_presets ?? {} })
       audio.parar()
       audio.cargarOriginal(`media://p/${id}/pistas/original.flac`)
       audio.usar('resultado')
@@ -261,7 +264,9 @@ export const useStore = create<Store>((set, get) => ({
     if (JSON.stringify(nueva) === JSON.stringify(a.edicion)) return
     const cambioIntro = JSON.stringify([a.edicion.intro, a.edicion.song]) !== JSON.stringify([nueva.intro, nueva.song])
     const cambioAcap = JSON.stringify(a.edicion.acapela) !== JSON.stringify(nueva.acapela)
-    zonaPendiente = cambioIntro ? 'intro' : cambioAcap ? 'acapela' : null
+    const cambioFxIntro = JSON.stringify(a.edicion.fx?.intro) !== JSON.stringify(nueva.fx?.intro)
+    const cambioFxSalida = JSON.stringify(a.edicion.fx?.salida) !== JSON.stringify(nueva.fx?.salida)
+    zonaPendiente = cambioIntro || cambioFxIntro ? 'intro' : cambioAcap ? 'acapela' : cambioFxSalida ? 'fin' : null
     const ahora = Date.now()
     const fusionar = !!clave && clave === ultimaClave && ahora - ultimoCambio < 900
     ultimaClave = clave ?? ''
@@ -317,6 +322,7 @@ export const useStore = create<Store>((set, get) => ({
         e.song.start_s = sug.song.start_s
       }
       if (z === 'acapela') e.acapela = { ...sug.acapela }
+      if (z === 'efectos') e.fx = JSON.parse(JSON.stringify(sug.fx))
       if (z === 'sonido') {
         e.crossfade_ms = sug.crossfade_ms
         e.end_fade_ms = sug.end_fade_ms
@@ -328,6 +334,10 @@ export const useStore = create<Store>((set, get) => ({
   escucharZona(z) {
     const info = get().preview.info
     if (!info) return
+    if (z === 'fin') {
+      audio.tramo(Math.max(0, info.duracion_s - 14), info.duracion_s)
+      return
+    }
     const seg = info.segmentos.find((s) => (z === 'intro' ? s.tipo === 'cancion' : s.tipo === 'acapela'))
     if (!seg) {
       if (z === 'intro') audio.tramo(0, Math.min(10, info.duracion_s))

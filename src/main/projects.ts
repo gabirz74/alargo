@@ -12,6 +12,7 @@ export type Proyecto = {
   calidad: 'alta' | 'rapida'
   duracion_s?: number
   bpm?: number
+  portada?: boolean
   estado: 'en_cola' | 'analizando' | 'listo' | 'error'
   error?: string
   progreso?: number

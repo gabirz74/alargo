@@ -94,7 +94,15 @@ export function Interruptor({ valor, onChange, etiqueta }: { valor: boolean; onC
   )
 }
 
-export function Fila({ etiqueta, ayuda, children }: { etiqueta: string; ayuda?: string; children: ReactNode }): JSX.Element {
+export function Fila({ etiqueta, ayuda, children, apilada }: { etiqueta: string; ayuda?: string; children: ReactNode; apilada?: boolean }): JSX.Element {
+  if (apilada)
+    return (
+      <div className="py-1.5">
+        <div className="text-[13px]">{etiqueta}</div>
+        {ayuda && <div className="mb-1.5 text-[12px] leading-snug text-faint">{ayuda}</div>}
+        {children}
+      </div>
+    )
   return (
     <div className="flex items-center justify-between gap-4 py-1.5">
       <div className="min-w-0">

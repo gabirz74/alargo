@@ -126,7 +126,7 @@ export function registrarIpc(): void {
       }
       const info = await motorEditor().pedir(
         'export',
-        { proyecto: proy.dirProyecto(id), edicion, destino, formato: ext, bits: aj.bits, kbps: aj.kbps, etiquetas: opciones.etiquetas },
+        { proyecto: proy.dirProyecto(id), edicion, destino, formato: ext, bits: aj.bits, kbps: aj.kbps, etiquetas: opciones.etiquetas, portada: aj.portada },
         (p) => aTodas('export:progreso', p)
       )
       return { archivo: destino, duracion_s: info.duracion_s }

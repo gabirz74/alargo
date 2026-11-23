@@ -9,3 +9,4 @@ mutagen
 imageio-ffmpeg
 audioread
 beat_this @ https://github.com/CPJKU/beat_this/archive/refs/tags/v1.1.0.zip
+pillow

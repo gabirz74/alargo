@@ -6,6 +6,7 @@ import numpy as np
 import soundfile as sf
 
 from .common import BARS_BLOCK, SR, run_ffmpeg
+from . import fx as efectos
 from .dsp import nivelar, picos, sonoridad, t_compas
 
 EDICION_BASE = {
@@ -40,6 +41,7 @@ EDICION_BASE = {
     "crossfade_ms": 6.0,
     "end_fade_ms": 0.0,            # fundido final cuando no hay acapela
     "master": {"limiter": True},
+    "fx": efectos.FX_BASE,
 }
 
 
@@ -164,6 +166,9 @@ def render(S, an, ed):
             intro = buf[: int(round(L * SR)) + xf]
         else:
             intro = corte(src, ts, ts + L + xf_s)
+        fxi = ed["fx"]["intro"]
+        if fxi["bateria"]["on"] and not it["loop_bars"] and it["source"] != "drums":
+            intro = intro + corte(S["drums"], ts, ts + L + xf_s) * efectos._db(fxi["bateria"]["nivel_db"])
         obj = sonoridad(corte(original, td, td + N * T4))
         gan = 1.0
         if it["level_match"] and obj is not None:
@@ -173,6 +178,18 @@ def render(S, an, ed):
         if it["fade_in_ms"] > 0:
             f = min(len(intro), int(it["fade_in_ms"] / 1000 * SR))
             intro[:f] *= np.linspace(0, 1, f)[:, None]
+        nL = int(round(L * SR))
+        fl = fxi["filtro"]
+        if fl["on"]:
+            n_sw = int(fl["compases"] * T4 * SR)
+            f0 = float(fl["desde_hz"])
+            f1, f0 = (20000.0, f0) if fl["tipo"] == "lp" else (30.0, f0)
+            intro[:nL] = efectos.barrido_filtro(intro[:nL], f0, f1, fl["tipo"], mantener=max(0, nL - n_sw))
+        if fxi["corte"]["on"]:
+            m = min(nL, int(fxi["corte"]["tiempos"] * T * SR))
+            r = int(0.012 * SR)
+            intro[nL - m:nL] *= 0.0
+            intro[nL - m - r:nL - m] *= np.linspace(1, 0, r)[:, None]
         info["intro"] = dict(duracion_s=round(L, 3), tiempos=round(L / T, 1), extra_pre=pre, extra_post=post,
                              ganancia_db=round(20 * np.log10(max(gan, 1e-6)), 1))
         if L / T < 28 and not it["loop_bars"]:
@@ -181,10 +198,29 @@ def render(S, an, ed):
     # ---- cuerpo
     cuerpo = corte(original, R, fin_cuerpo + (xf_s if hay_acapela else 0))
 
-    partes_t = {}  # marcas en el tiempo de salida
+    t_hit = None
     if intro is not None:
         out = unir(intro, cuerpo, xf)
         t_cuerpo = L
+        # ---- efectos que se superponen en el golpe de entrada (el compás donde empieza la frase cantada)
+        fxi = ed["fx"]["intro"]
+        t_hit = (N + pre + post) * T4
+        i_hit = int(round(t_hit * SR))
+        pico_ref = float(np.percentile(np.abs(original[::8]), 99.5)) + 1e-6
+        if i_hit < len(out):
+            if fxi["riser"]["on"]:
+                n_r = min(i_hit, int(fxi["riser"]["compases"] * T4 * SR))
+                ref = out[max(0, i_hit - 4 * SR):i_hit]
+                rms = float(np.sqrt((ref ** 2).mean())) if len(ref) else 0.05
+                out[i_hit - n_r:i_hit] += efectos.ruido_riser(n_r, rms * efectos._db(fxi["riser"]["nivel_db"]))
+            if fxi["redoble"]["on"]:
+                m = min(i_hit, int(fxi["redoble"]["tiempos"] * T * SR))
+                out[i_hit - m:i_hit] += efectos.redoble(m, T, fxi["redoble"]["tiempos"], pico_ref * efectos._db(fxi["redoble"]["nivel_db"]))
+            if fxi["impacto"]["on"]:
+                h = efectos.impacto(pico_ref * efectos._db(fxi["impacto"]["nivel_db"]))
+                m = min(len(h), len(out) - i_hit)
+                out[i_hit:i_hit + m] += h[:m]
+        info["golpe_s"] = round(t_hit, 3)
     else:
         out = cuerpo
         t_cuerpo = 0.0
@@ -205,14 +241,54 @@ def render(S, an, ed):
             resto = corte(S["inst"], tc, tc + fi / SR)
             resto = resto * (np.cos(np.linspace(0, np.pi / 2, len(resto)))[:, None] ** 2)
             cola[: len(resto)] += resto
+        fxs = ed["fx"]["salida"]
+        if fxs["bateria"]["on"]:
+            cola = cola + corte(S["drums"], tc, tc + n_s) * efectos._db(fxs["bateria"]["nivel_db"])
+        if fxs["filtro"]["on"]:
+            n_f = min(len(cola), int(fxs["filtro"]["compases"] * T4 * SR))
+            cola[-n_f:] = efectos.barrido_filtro(cola[-n_f:], 20000.0, float(fxs["filtro"]["hasta_hz"]), "lp")
+        if fxs["corte_ritmico"]["on"]:
+            n_g = min(len(cola), int(fxs["corte_ritmico"]["compases"] * T4 * SR))
+            cola[-n_g:] = efectos.puerta_ritmica(cola[-n_g:], T, float(fxs["corte_ritmico"]["division"]))
+        cola = cola.astype(np.float32)
+        antes_fade = cola.copy()
         f = min(len(cola), int(max(ac["tail_fade_ms"], 5) / 1000 * SR))
         cola[-f:] *= np.linspace(1, 0, f)[:, None]
+        # ---- eco y reverb: alargan el final (cola de efectos tras la última nota)
+        extra = 0.0
+        wet_eco = wet_rev = None
+        if fxs["eco"]["on"]:
+            m = min(len(cola), int(2 * T * SR))
+            wet_eco = efectos.eco(antes_fade[-m:], float(fxs["eco"]["division"]) * T, 0.5, 3.0) * efectos._db(fxs["eco"]["mezcla_db"])
+            wet_eco_ini = len(cola) - m
+            extra = max(extra, (wet_eco_ini + len(wet_eco) - len(cola)) / SR)
+        if fxs["reverb"]["on"]:
+            rv = efectos.reverb(cola, float(fxs["reverb"]["seg"]), float(fxs["reverb"]["mezcla"]))
+            wet_rev = rv[len(cola):]
+            wet_rev_dentro = rv[:len(cola)] - cola
+            extra = max(extra, len(wet_rev) / SR)
+        if extra > 0:
+            total = len(cola) + int(extra * SR)
+            ext = np.zeros((total, 2), dtype=np.float32)
+            ext[:len(cola)] = cola
+            if wet_eco is not None:
+                ext[wet_eco_ini:wet_eco_ini + len(wet_eco)] += wet_eco[: total - wet_eco_ini]
+            if wet_rev is not None:
+                ext[:len(cola)] += wet_rev_dentro
+                ext[len(cola):len(cola) + len(wet_rev)] += wet_rev[: total - len(cola)]
+            ff = min(len(ext), int(0.35 * SR))
+            ext[-ff:] *= np.linspace(1, 0, ff)[:, None]
+            cola = ext
+            info["cola_efectos_s"] = round(extra, 2)
         out = unir(out, cola.astype(np.float32), xf)
         t_fin = t_ac + n_s
         info["acapela"] = dict(duracion_s=round(n_s, 3), compases=round(n_s / T4, 2))
     elif ed["end_fade_ms"] > 0:
         f = min(len(out), int(ed["end_fade_ms"] / 1000 * SR))
         out[-f:] *= np.linspace(1, 0, f)[:, None]
+
+    if not hay_acapela and any(v["on"] for v in ed["fx"]["salida"].values()):
+        avisos.append("fx_salida_sin_acapela")
 
     segmentos = []
     if intro is not None:
@@ -242,7 +318,7 @@ def guardar_wav(ruta, out, bits=16):
     sf.write(str(ruta), out, SR, subtype="PCM_24" if bits == 24 else "PCM_16")
 
 
-def exportar(out, destino, formato="mp3", etiquetas=None, bits=16, kbps=320):
+def exportar(out, destino, formato="mp3", etiquetas=None, bits=16, kbps=320, portada=None):
     """Escribe `destino` (con su extensión) en mp3 / wav / flac."""
     etiquetas = etiquetas or {}
     formato = formato.lower()
@@ -256,10 +332,14 @@ def exportar(out, destino, formato="mp3", etiquetas=None, bits=16, kbps=320):
         if v:
             meta += ["-metadata", f"{k}={v}"]
     try:
+        con = portada and os.path.exists(portada)
+        entrada = ["-i", tmp] + (["-i", portada, "-map", "0:a", "-map", "1:v"] if con else [])
         if formato == "mp3":
-            run_ffmpeg(["-i", tmp, "-b:a", f"{int(kbps)}k", "-id3v2_version", "3", "-map_metadata", "-1"] + meta + [str(destino)])
+            extra = ["-c:v", "copy", "-metadata:s:v", "title=Album cover", "-metadata:s:v", "comment=Cover (front)"] if con else []
+            run_ffmpeg(entrada + extra + ["-b:a", f"{int(kbps)}k", "-id3v2_version", "3", "-map_metadata", "-1"] + meta + [str(destino)])
         elif formato == "flac":
-            run_ffmpeg(["-i", tmp, "-compression_level", "8", "-map_metadata", "-1"] + meta + [str(destino)])
+            extra = ["-c:v", "copy", "-disposition:v", "attached_pic"] if con else []
+            run_ffmpeg(entrada + extra + ["-compression_level", "8", "-map_metadata", "-1"] + meta + [str(destino)])
         else:
             raise ValueError("Formato no soportado: " + formato)
     finally:

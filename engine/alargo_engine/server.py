@@ -51,8 +51,13 @@ def cmd_analyze(a, prog):
 def cmd_open(a, prog):
     proj = a["proyecto"]
     S, an = project.cargar(proj)
-    return dict(analisis=an, edicion=project.leer_json(project.ruta(proj, "edicion.json")),
-                sugerencia=project.leer_json(project.ruta(proj, "sugerencia.json")),
+    from .fx import PRESETS
+    from .render import normalizar_edicion
+
+    ed = project.leer_json(project.ruta(proj, "edicion.json"))
+    sug = project.leer_json(project.ruta(proj, "sugerencia.json"))
+    return dict(analisis=an, edicion=normalizar_edicion(ed) if ed else None, fx_presets=PRESETS,
+                sugerencia=normalizar_edicion(sug) if sug else None,
                 picos=project.leer_json(project.ruta(proj, "picos.json")),
                 proyecto=project.leer_json(project.ruta(proj, "proyecto.json")))
 
@@ -90,7 +95,21 @@ def cmd_export(a, prog):
     prog.set(0.5)
     et = dict(a.get("etiquetas") or {})
     et["TBPM" if a.get("formato", "mp3") == "mp3" else "BPM"] = str(int(round(an["bpm"])))
-    exportar(out, a["destino"], a.get("formato", "mp3"), et, int(a.get("bits", 16)), int(a.get("kbps", 320)))
+    portada = None
+    modo = a.get("portada", "marca")
+    original = project.ruta(a["proyecto"], "pistas", "portada.jpg")
+    if modo != "ninguna" and os.path.exists(original):
+        portada = original
+        if modo == "marca":
+            from . import portada as pt
+
+            portada = a["destino"] + ".portada.jpg"
+            pt.con_marca(original, portada)
+    try:
+        exportar(out, a["destino"], a.get("formato", "mp3"), et, int(a.get("bits", 16)), int(a.get("kbps", 320)), portada)
+    finally:
+        if portada and portada != original and os.path.exists(portada):
+            os.remove(portada)
     prog.set(1.0)
     info["archivo"] = a["destino"]
     return info

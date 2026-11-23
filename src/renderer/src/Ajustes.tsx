@@ -65,6 +65,9 @@ export function Ajustes(): JSX.Element {
                 <Segmentado valor={ajustes.bits} opciones={[{ v: 16, t: '16 bits' }, { v: 24, t: '24 bits' }]} onChange={(v) => void guardarAjustes({ bits: v })} />
               </Fila>
             )}
+            <Fila etiqueta="Portada" ayuda="Se copia de la canción original. «Con marca» añade una franja con EXTENDED.">
+              <Segmentado valor={ajustes.portada} opciones={[{ v: 'marca', t: 'Con marca' }, { v: 'igual', t: 'Igual' }, { v: 'ninguna', t: 'Sin portada' }]} onChange={(v) => void guardarAjustes({ portada: v })} />
+            </Fila>
             <Fila etiqueta="Nombre del archivo" ayuda="Puedes usar {titulo}, {artista} y {bpm}.">
               <input value={ajustes.patron} onChange={(e) => void guardarAjustes({ patron: e.target.value })} className="no-drag h-9 w-56 rounded-xl bg-sunken px-3 text-[13px] outline-none focus:ring-2 focus:ring-accent" />
             </Fila>

@@ -186,9 +186,13 @@ function Fila({ p }: { p: Proyecto }): JSX.Element {
   return (
     <li className="group relative">
       <div role={listo ? 'button' : undefined} tabIndex={listo ? 0 : -1} onClick={() => listo && void abrir(p.id)} onKeyDown={(e) => listo && (e.key === 'Enter' || e.key === ' ') && void abrir(p.id)} className={`flex items-center gap-4 rounded-2xl px-4 py-3 transition-colors ${listo ? 'cursor-pointer hover:bg-surface' : ''}`}>
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-sunken text-soft">
-          <Icono n="nota" size={18} />
-        </div>
+        {p.portada ? (
+          <img src={`media://p/${p.id}/pistas/portada.jpg`} alt="" className="h-10 w-10 shrink-0 rounded-xl object-cover" draggable={false} />
+        ) : (
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-sunken text-soft">
+            <Icono n="nota" size={18} />
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           <div className="truncate font-medium">{p.titulo || 'Sin título'}</div>
           <div className="truncate text-[13px] text-soft">

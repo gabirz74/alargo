@@ -1,5 +1,24 @@
 export type Fuente = 'inst' | 'drums' | 'drums_bass'
 
+export type Efectos = {
+  preset: string
+  intro: {
+    filtro: { on: boolean; tipo: 'lp' | 'hp'; desde_hz: number; compases: number }
+    riser: { on: boolean; compases: number; nivel_db: number }
+    impacto: { on: boolean; nivel_db: number }
+    corte: { on: boolean; tiempos: number }
+    redoble: { on: boolean; tiempos: number; nivel_db: number }
+    bateria: { on: boolean; nivel_db: number }
+  }
+  salida: {
+    eco: { on: boolean; division: number; mezcla_db: number }
+    reverb: { on: boolean; seg: number; mezcla: number }
+    filtro: { on: boolean; hasta_hz: number; compases: number }
+    bateria: { on: boolean; nivel_db: number }
+    corte_ritmico: { on: boolean; compases: number; division: number }
+  }
+}
+
 export type Edicion = {
   version: number
   intro: {
@@ -30,6 +49,7 @@ export type Edicion = {
   crossfade_ms: number
   end_fade_ms: number
   master: { limiter: boolean }
+  fx: Efectos
 }
 
 export type PicosCrudos = { pps: number; n: number; escala: number; datos: string }
@@ -67,6 +87,7 @@ export type Proyecto = {
   progreso?: number
   etapa?: string
   inicio?: number
+  portada?: boolean
 }
 
 export type Segmento = { tipo: 'intro' | 'cancion' | 'acapela'; ini: number; fin: number; origen_ini: number }
@@ -90,6 +111,7 @@ export type Ajustes = {
   bits: 16 | 24
   patron: string
   preguntarDonde: boolean
+  portada: 'marca' | 'igual' | 'ninguna'
 }
 
 export type EstadoMotor = {

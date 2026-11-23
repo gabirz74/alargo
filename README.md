@@ -13,7 +13,7 @@ Funciona en **macOS** (Apple Silicon e Intel) y **Windows 10/11**.
    - encuentra dónde entra cada frase cantada y qué estribillo se repite (el último será la acapela).
 3. Te propone un extended (la **sugerencia IA**) y lo **escuchas al momento**.
 4. Lo ajustas todo a tu gusto: arrastra marcadores en la línea de tiempo o usa los controles. Escucha cada empalme por separado.
-5. **Exportas** a MP3, WAV o FLAC, con etiquetas (título, artista y BPM).
+5. **Exportas** a MP3, WAV o FLAC, con etiquetas (título, artista y BPM) y la **portada** de la canción original (igual, con una franja «EXTENDED» o sin ella).
 
 ## Qué puedes personalizar
 
@@ -23,6 +23,7 @@ Funciona en **macOS** (Apple Silicon e Intel) y **Windows 10/11**.
 | Entrada de la voz | dónde retoma la canción (arrastrable) · ajuste fino de ±10 ms y ±1 tiempo · entradas de voz detectadas |
 | Acapela final | activar/desactivar · posición (arrastrable, de compás en compás) · estribillos detectados · duración (4/8/16/32 compases) · volumen · cuánto tarda en apagarse el instrumental · fundido final |
 | Ritmo | tempo detectado · afinado de la rejilla en milisegundos · desplazar la rejilla un tiempo |
+| Efectos de DJ | estilos Suave / Intenso / Sin efectos y cada efecto por separado: filtro que se abre, subida de ruido, golpe de entrada, silencio antes de la voz, redoble de caja, más batería · eco, reverb final, filtro que se cierra, batería de fondo bajo la acapela y voz cortada al ritmo |
 | Sonido | fundido en las uniones (0–100 ms) · limitador suave |
 | General | deshacer/rehacer · volver a la sugerencia IA · zoom · previsualización fiel (lo que oyes es lo que exportas) |
 

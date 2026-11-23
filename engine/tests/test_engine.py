@@ -62,7 +62,8 @@ class Montaje(unittest.TestCase):
 
     def test_ritmo_continuo_en_la_union(self):
         # con la batería sola, el golpe siguiente a la unión intro->canción debe caer en la rejilla de tiempos
-        ed = edicion(intro=dict(source="drums", level_match=False, auto_extra=False))
+        from alargo_engine import fx
+        ed = edicion(intro=dict(source="drums", level_match=False, auto_extra=False), fx=fx.PRESETS["ninguno"])
         S = dict(self.S, original=self.S["drums"], voz=0 * self.S["voz"])  # sin voz ni bajo: solo importa el pulso
         out, info = render.render(S, self.an, ed)
         u = info["uniones"][0]
@@ -132,3 +133,54 @@ class Protocolo(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Portada(unittest.TestCase):
+    def test_extraer_marca_y_exportar(self):
+        from PIL import Image
+
+        from alargo_engine import portada
+        from alargo_engine.common import ffmpeg_exe, run_ffmpeg
+
+        with tempfile.TemporaryDirectory() as d:
+            jpg = os.path.join(d, "c.jpg")
+            Image.new("RGB", (600, 600), (200, 40, 40)).save(jpg)
+            wav = os.path.join(d, "a.wav")
+            sf.write(wav, np.zeros((SR, 2), dtype="float32"), SR)
+            mp3 = os.path.join(d, "a.mp3")
+            run_ffmpeg(["-i", wav, "-i", jpg, "-map", "0:a", "-map", "1:v", "-c:v", "copy", "-id3v2_version", "3", mp3])
+            ext = os.path.join(d, "ext.jpg")
+            self.assertTrue(portada.extraer(mp3, ext))
+            self.assertFalse(portada.extraer(wav, os.path.join(d, "no.jpg")))   # sin portada
+            marca = os.path.join(d, "marca.jpg")
+            portada.con_marca(ext, marca)
+            self.assertNotEqual(open(ext, "rb").read(), open(marca, "rb").read())
+            im = Image.open(marca)
+            self.assertLess(sum(im.getpixel((300, 590))), 150)                   # la franja inferior es oscura
+            for fmt in ("mp3", "flac"):
+                dest = os.path.join(d, "o." + fmt)
+                render.exportar(np.zeros((SR, 2), dtype="float32"), dest, fmt, {"title": "t"}, portada=marca)
+                r = subprocess.run([ffmpeg_exe(), "-i", dest], capture_output=True, text=True)
+                self.assertIn("Video", r.stderr, fmt)
+
+
+class Efectos(unittest.TestCase):
+    def test_presets_y_cola(self):
+        from alargo_engine import fx
+
+        S, an = sintetico()
+        sin = render.render(S, an, edicion(fx=fx.PRESETS["ninguno"]))[0]
+        con, info = render.render(S, an, edicion(fx=fx.PRESETS["intenso"]))
+        self.assertGreater(len(con), len(sin))             # eco y reverb alargan el final
+        self.assertTrue(np.isfinite(con).all())
+        self.assertGreater(info["cola_efectos_s"], 1.0)
+        # el filtro de intro oscurece los agudos al principio
+        a = np.abs(np.fft.rfft(sin[SR:2 * SR, 0]))
+        b = np.abs(np.fft.rfft(con[SR:2 * SR, 0]))
+        hf = slice(int(4000 * 1.0), int(12000 * 1.0))
+        self.assertLessEqual(b[hf].sum(), a[hf].sum() + 1e-6)
+
+    def test_sin_acapela_avisa(self):
+        S, an = sintetico()
+        _, info = render.render(S, an, edicion(acapela=dict(enabled=False)))
+        self.assertIn("fx_salida_sin_acapela", info["avisos"])
