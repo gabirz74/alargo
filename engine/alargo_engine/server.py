@@ -56,9 +56,15 @@ def cmd_open(a, prog):
 
     ed = project.leer_json(project.ruta(proj, "edicion.json"))
     sug = project.leer_json(project.ruta(proj, "sugerencia.json"))
+    pic = project.leer_json(project.ruta(proj, "picos.json"))
+    if pic is not None and "bandas" not in pic:   # onda por frecuencias (proyectos de versiones anteriores)
+        from .dsp import picos_bandas
+
+        pic["bandas"] = picos_bandas(S["original"], 100)
+        project.escribir_json(project.ruta(proj, "picos.json"), pic)
     return dict(analisis=an, edicion=normalizar_edicion(ed) if ed else None, fx_presets=PRESETS,
                 sugerencia=normalizar_edicion(sug) if sug else None,
-                picos=project.leer_json(project.ruta(proj, "picos.json")),
+                picos=pic,
                 proyecto=project.leer_json(project.ruta(proj, "proyecto.json")))
 
 
@@ -82,7 +88,10 @@ def cmd_render(a, prog):
     destino = a["salida"]
     os.makedirs(os.path.dirname(destino), exist_ok=True)
     guardar_wav(destino, out, 16)
+    from .dsp import detectar_silencios
+
     info["picos"] = picos(out, 100, max(pico, 1e-6))
+    info["silencios"] = detectar_silencios(out)
     info["archivo"] = destino
     return info
 
@@ -115,13 +124,27 @@ def cmd_export(a, prog):
     return info
 
 
+def cmd_picos_ventana(a, prog):
+    """Picos de alta resolución de un tramo de la canción original (para el zoom de precisión)."""
+    from .dsp import picos, picos_bandas
+
+    S, an = project.cargar(a["proyecto"])
+    pps = int(min(4000, max(100, a.get("pps", 1000))))
+    ini = max(0.0, float(a["ini_s"]))
+    fin = min(len(S["original"]) / SR, float(a["fin_s"]))
+    i0, i1 = int(ini * SR), int(fin * SR)
+    esc = float(a.get("escala") or np.abs(S["original"]).max() or 1.0)
+    return dict(ini=ini, fin=fin, pps=pps, original=picos(S["original"][i0:i1], pps, esc, ini), voz=picos(S["voz"][i0:i1], pps, esc, ini),
+                inst=picos(S["inst"][i0:i1], pps, esc, ini), bandas=picos_bandas(S["original"][i0:i1], pps, ini))
+
+
 def cmd_close(a, prog):
     project.soltar()
     return {}
 
 
 COMANDOS = dict(ping=cmd_ping, models_status=cmd_models_status, models_download=cmd_models_download, analyze=cmd_analyze,
-                open=cmd_open, render=cmd_render, export=cmd_export, close=cmd_close)
+                open=cmd_open, picos_ventana=cmd_picos_ventana, render=cmd_render, export=cmd_export, close=cmd_close)
 
 
 def atender(msg):

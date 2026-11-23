@@ -19,6 +19,42 @@ export function fmtMB(bytes: number): string {
   return Math.max(1, Math.round(bytes / 1e6)) + ' MB'
 }
 
+/** m:ss.mmm (precisión de milisegundo) */
+export function fmtMs(s: number): string {
+  if (!isFinite(s) || s < 0) s = 0
+  const m = Math.floor(s / 60)
+  const r = s - m * 60
+  return `${m}:${r.toFixed(3).padStart(6, '0')}`
+}
+
+/** Acepta «1:23.456», «83,5» o «83.5» y devuelve segundos (o null si no se entiende). */
+export function leerTiempo(txt: string): number | null {
+  const t = txt.trim().replace(',', '.')
+  const m = /^(?:(\d+):)?(\d+(?:\.\d+)?)$/.exec(t)
+  if (!m) return null
+  return (m[1] ? parseInt(m[1], 10) * 60 : 0) + parseFloat(m[2])
+}
+
+type Rango = { ini_s: number; fin_s: number }
+/** Tiempo que se ve en el resultado -> tiempo del resultado sin cortes (los cortes se guardan sin cortes). */
+export function aBruto(d: number, cs: Rango[]): number {
+  let u = d
+  for (const c of cs) {
+    if (u >= c.ini_s - 1e-9) u += c.fin_s - c.ini_s
+    else break
+  }
+  return u
+}
+/** Tiempo sin cortes -> tiempo que se ve en el resultado. */
+export function aPantalla(u: number, cs: Rango[]): number {
+  let d = u
+  for (const c of cs) {
+    if (u >= c.fin_s) d -= c.fin_s - c.ini_s
+    else if (u > c.ini_s) d -= u - c.ini_s
+  }
+  return d
+}
+
 export const T4 = (an: Analisis): number => 4 * an.grid.T
 
 /** Compás (índice entero relativo a la rejilla) más cercano a `t`. */

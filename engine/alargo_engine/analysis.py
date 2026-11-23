@@ -153,7 +153,7 @@ def analizar(proj, entrada, calidad, prog, pistas_listas=None):
         project.guardar_pista(proj, n, x)
     tiene_portada = portada.extraer(entrada, project.ruta(proj, "pistas", "portada.jpg"))
     escala = float(max(np.abs(S["original"]).max(), 1e-6))
-    picos = dict(original=dsp.picos(S["original"], 100, escala), voz=dsp.picos(S["voz"], 100, escala), inst=dsp.picos(S["inst"], 100, escala))
+    picos = dict(bandas=dsp.picos_bandas(S["original"], 100), original=dsp.picos(S["original"], 100, escala), voz=dsp.picos(S["voz"], 100, escala), inst=dsp.picos(S["inst"], 100, escala))
     project.escribir_json(project.ruta(proj, "picos.json"), picos)
     project.escribir_json(project.ruta(proj, "analisis.json"), an)
     project.escribir_json(project.ruta(proj, "edicion.json"), sug)

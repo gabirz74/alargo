@@ -131,6 +131,11 @@ const ATAJOS: [string, string][] = [
   ['L', 'Repetir toda la pista en bucle'],
   ['1  ·  2', 'Escuchar tu extended / la canción original'],
   ['M', 'Silenciar'],
+  ['+  −  0', 'Acercar / alejar / ver toda la canción'],
+  ['Ctrl/Cmd + rueda', 'Zoom donde está el ratón'],
+  ['Alt + arrastrar', 'Mover sin imán (libre)'],
+  ['P', 'Ocultar o mostrar el panel de ajustes'],
+  ['S', 'Seguir o no el cursor de reproducción'],
   ['Cmd/Ctrl + Z', 'Deshacer'],
   ['Cmd/Ctrl + Mayús + Z', 'Rehacer'],
   ['Cmd/Ctrl + E', 'Exportar'],
@@ -175,8 +180,8 @@ function Guia(): JSX.Element | null {
         <li>
           <b className="font-semibold">Arriba</b> está tu <b className="font-semibold">canción original</b>: ahí eliges qué trozos usar. <b className="font-semibold">Abajo</b> está <b className="font-semibold">tu extended</b>: el resultado, lo que se exporta.
         </li>
-        <li>Las líneas <b className="font-semibold text-danger">rojas</b> son los tiempos (kicks): la más gruesa marca el primer tiempo de cada compás.</li>
-        <li>En el panel de la derecha ve abriendo <b className="font-semibold">una sección cada vez</b>: qué suena en la intro, cuándo entra la canción, la acapela, los efectos… y «Cortar partes» para quitar lo que no quieras.</li>
+        <li>La rejilla muestra los tiempos (kicks): el primer tiempo de cada compás en <b className="font-semibold text-danger">rojo</b>. Arrastra por la barra de arriba para moverte, acerca con Ctrl/Cmd + rueda o con + y −, y mantén <b className="font-semibold">Alt</b> al arrastrar para mover sin imán.</li>
+        <li>En el panel de la derecha ve abriendo <b className="font-semibold">una sección cada vez</b>: qué suena en la intro, cuándo entra la canción, la acapela, los efectos… y al final «Cortar partes» para quitar de tu extended lo que no quieras.</li>
         <li>También puedes arrastrar por la pista de arriba: el bloque gris (intro), la línea «Entra la voz» y el bloque azul (acapela). Cada cambio suena solo para que oigas su efecto.</li>
       </ul>
       <div className="absolute right-2 top-2">
@@ -240,6 +245,7 @@ function Resumen(): JSX.Element | null {
 export function Editor(): JSX.Element {
   const { abierto, cerrar, deshacer, rehacer, restablecer, preview, exportar, exportando, ajustes, info } = useStore()
   const mac = info?.plataforma === 'darwin'
+  const [panel, setPanel] = useState(true)
   const refAbierto = useRef(abierto)
   refAbierto.current = abierto
 
@@ -316,6 +322,21 @@ export function Editor(): JSX.Element {
       } else if (e.key === '2') {
         audio.usar('original')
         hecho()
+      } else if (e.key === '+' || e.key === '=') {
+        zoomEvt({ factor: 1.6 })
+        hecho()
+      } else if (e.key === '-' || e.key === '_') {
+        zoomEvt({ factor: 1 / 1.6 })
+        hecho()
+      } else if (e.key === '0') {
+        zoomEvt({ todo: true })
+        hecho()
+      } else if (e.key.toLowerCase() === 'p') {
+        setPanel((v) => !v)
+        hecho()
+      } else if (e.key.toLowerCase() === 's') {
+        st.setVista({ seguir: !st.seguir })
+        hecho()
       } else if (e.key === '?') {
         window.dispatchEvent(new Event('alargo:atajos'))
         hecho()
@@ -360,10 +381,8 @@ export function Editor(): JSX.Element {
       <div className="flex min-h-0 flex-1 gap-5 px-6 pb-6">
         <section className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
           <Guia />
-          <div className="relative">
-            <Zoom />
-            <Timeline />
-          </div>
+          <BarraVista panel={panel} setPanel={setPanel} />
+          <Timeline />
           <Resumen />
           <Transporte />
           {preview.error && (
@@ -384,25 +403,56 @@ export function Editor(): JSX.Element {
             </button>
           )}
         </section>
-        <aside className="w-[372px] shrink-0 overflow-y-auto rounded-3xl bg-surface px-5 py-1">
-          <Inspector />
-        </aside>
+        {panel && (
+          <aside className="w-[372px] shrink-0 overflow-y-auto rounded-3xl bg-surface px-5 py-1">
+            <Inspector />
+          </aside>
+        )}
       </div>
     </div>
   )
 }
 
-function Zoom(): JSX.Element {
-  const zoom = useStore((s) => s.zoom)
-  const setZoom = useStore((s) => s.setZoom)
+const ZOOM_MAX = 3000
+const zoomEvt = (d: { factor?: number; abs?: number; todo?: boolean }): void => void window.dispatchEvent(new CustomEvent('alargo:zoom', { detail: d }))
+
+function BarraVista({ panel, setPanel }: { panel: boolean; setPanel: (v: boolean) => void }): JSX.Element {
+  const { iman, seguir, ondaModo, alto, zoom, zoomFit, setVista, abierto } = useStore()
+  const fit = Math.max(zoomFit, 0.5)
+  const z = zoom > 0 ? zoom : fit
+  const u = Math.max(0, Math.min(1, Math.log(z / fit) / Math.log(ZOOM_MAX / fit)))
   return (
-    <div className="absolute right-1 top-0 z-10 flex items-center gap-0.5 rounded-lg bg-bg">
-      <button type="button" title="Ver toda la canción" aria-label="Ver toda la canción" onClick={() => setZoom(0)} className="no-drag grid h-6 w-6 place-items-center rounded-md text-soft hover:bg-sunken hover:text-ink">
-        <Icono n="menos" size={14} />
+    <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-soft">
+      <div className="flex items-center gap-1.5" title="Cómo se pegan al arrastrar. Mantén Alt para moverlo libre.">
+        <span>Imán</span>
+        <Segmentado valor={iman} opciones={[{ v: 'auto', t: 'Auto', titulo: 'Cada cosa se pega a lo que le toca (compases, tiempos…)' }, { v: 'compas', t: 'Compás' }, { v: 'tiempo', t: 'Tiempo' }, { v: 'libre', t: 'Libre', titulo: 'Sin imán: precisión total' }]} onChange={(v) => setVista({ iman: v })} />
+      </div>
+      <div className="flex items-center gap-1.5">
+        <span>Onda</span>
+        <Segmentado valor={ondaModo} opciones={[{ v: 'voz', t: 'Voz', titulo: 'Voz en color e instrumental en gris' }, { v: 'frecuencias', t: 'Colores', titulo: 'Graves rojos, medios verdes y agudos azules, como en tu programa de DJ' }]} onChange={(v) => setVista({ ondaModo: v })} />
+      </div>
+      <button type="button" aria-pressed={seguir} title="El cursor se queda a la vista mientras suena. Si te mueves a mano, deja de seguirlo hasta que vuelvas a dar al play (S)" onClick={() => setVista({ seguir: !seguir })} className={`no-drag h-8 rounded-xl px-3 transition ${seguir ? 'bg-accent-soft font-medium text-accent' : 'bg-sunken hover:text-ink'}`}>
+        Seguir el cursor
       </button>
-      <button type="button" title="Acercar" aria-label="Acercar" onClick={() => setZoom(Math.max(20, (zoom || 4) * 1.8))} className="no-drag grid h-6 w-6 place-items-center rounded-md text-soft hover:bg-sunken hover:text-ink">
-        <Icono n="mas" size={14} />
-      </button>
+      <div className="ml-auto flex items-center gap-1.5">
+        <button type="button" title="Alejar (−)" aria-label="Alejar" onClick={() => zoomEvt({ factor: 1 / 1.6 })} className="no-drag grid h-7 w-7 place-items-center rounded-lg bg-sunken hover:text-ink">
+          <Icono n="menos" size={14} />
+        </button>
+        <input type="range" aria-label="Zoom" style={{ width: 110, ['--p' as string]: `${u * 100}%` }} min={0} max={1} step={0.001} value={u} onChange={(e) => zoomEvt({ abs: fit * Math.pow(ZOOM_MAX / fit, parseFloat(e.target.value)) })} />
+        <button type="button" title="Acercar (+)" aria-label="Acercar" onClick={() => zoomEvt({ factor: 1.6 })} className="no-drag grid h-7 w-7 place-items-center rounded-lg bg-sunken hover:text-ink">
+          <Icono n="mas" size={14} />
+        </button>
+        <button type="button" title="Ver toda la canción (0)" onClick={() => zoomEvt({ todo: true })} className="no-drag h-7 rounded-lg bg-sunken px-2.5 hover:text-ink">
+          Todo
+        </button>
+        <button type="button" aria-pressed={alto > 1} title="Pistas más altas para ver mejor la onda" onClick={() => setVista({ alto: alto > 1 ? 1 : 1.7 })} className={`no-drag h-7 rounded-lg px-2.5 transition ${alto > 1 ? 'bg-accent-soft text-accent' : 'bg-sunken hover:text-ink'}`}>
+          Altas
+        </button>
+        <button type="button" aria-pressed={!panel} title="Oculta el panel de ajustes para tener la línea de tiempo a todo el ancho (P)" onClick={() => setPanel(!panel)} className={`no-drag h-7 rounded-lg px-2.5 transition ${!panel ? 'bg-accent-soft text-accent' : 'bg-sunken hover:text-ink'}`}>
+          {panel ? 'Ocultar panel' : 'Mostrar panel'}
+        </button>
+      </div>
+      {!abierto && null}
     </div>
   )
 }

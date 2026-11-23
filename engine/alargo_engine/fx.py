@@ -18,7 +18,6 @@ FX_APAGADO = {
         "bateria": {"on": False, "nivel_db": 0},                                 # refuerza la batería de la intro
         "platillo_inv": {"on": False, "tiempos": 8, "nivel_db": -14},            # platillo invertido que sube hasta el golpe
         "sirena": {"on": False, "compases": 2, "nivel_db": -22},                 # sirena que sube de tono
-        "bocina": {"on": False, "nivel_db": -12},                                # bocina de aire (3 toques) al entrar
         "caida_graves": {"on": False, "nivel_db": -8},                           # sub grave largo tras el golpe
         "freno": {"on": False, "tiempos": 1},                                    # freno de vinilo en el último tiempo
         "tartamudeo": {"on": False, "tiempos": 1, "division": 0.25},             # repite un trocito al final de la intro
@@ -70,7 +69,7 @@ PRESETS["epico"] = _preset(
     {"filtro": {"tipo": "lp", "desde_hz": 350, "compases": 6}, "riser": {"compases": 2, "nivel_db": -12},
      "platillo_inv": {"tiempos": 8, "nivel_db": -13}, "impacto": {"nivel_db": -7}, "caida_graves": {"nivel_db": -7},
      "redoble": {"tiempos": 4, "nivel_db": -11}, "bateria": {"nivel_db": 2}, "bombo": {"nivel_db": -13},
-     "bombeo": {"profundidad": 0.4}, "crescendo": {"desde_db": -14}, "bocina": {"nivel_db": -13}},
+     "bombeo": {"profundidad": 0.4}, "crescendo": {"desde_db": -14}},
     {"eco": {"division": 0.75, "mezcla_db": -6}, "reverb": {"seg": 3.0, "mezcla": 0.3}, "filtro": {"hasta_hz": 600, "compases": 2},
      "bateria": {"nivel_db": -6}, "impacto_final": {"nivel_db": -10}},
 )
@@ -228,28 +227,6 @@ def sirena(n, pico, f0=300.0, f1=1500.0):
     y = (np.sin(fase) + 0.35 * np.sin(2 * fase)) * (np.linspace(0, 1, n) ** 1.6)
     y = np.stack([y, y], 1).astype(np.float32)
     return (y / (np.abs(y).max() + 1e-9) * pico).astype(np.float32)
-
-
-def bocina(pico, T):
-    """Bocina de aire: tres toques (corto, corto, largo) con armónicos ricos. Devuelve el audio y los tiempos."""
-    dur = max(1.6, 4 * T)
-    n = int(dur * SR)
-    out = np.zeros((n, 2), dtype=np.float32)
-    toques = [(0.0, 0.22), (0.30, 0.22), (0.60, 0.95)]
-    base = [370.0, 466.0, 554.0]
-    for ini, largo in toques:
-        i = int(ini * SR)
-        m = min(int(largo * SR), n - i)
-        t = np.arange(m) / SR
-        y = np.zeros(m)
-        for f in base:
-            fase = 2 * np.pi * f * t
-            y += np.sign(np.sin(fase)) * 0.5 + np.sin(2 * fase) * 0.3 + np.sin(3 * fase) * 0.25
-        env = np.minimum(1, t / 0.012) * np.minimum(1, (largo - t) / 0.05)
-        out[i:i + m] += (y * env)[:, None].astype(np.float32)
-    sos = butter(2, 6000 / (SR / 2), output="sos")
-    out = sosfilt(sos, out, axis=0).astype(np.float32)
-    return out / (np.abs(out).max() + 1e-9) * pico
 
 
 def sub_grave(pico, seg=1.3):

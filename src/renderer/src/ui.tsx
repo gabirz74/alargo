@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { fmtMs, leerTiempo } from './util'
 
 const RUTAS: Record<string, string> = {
   play: 'M7 4.5v15l12-7.5z',
@@ -182,5 +183,49 @@ export function Ajuste({ pasos, onPaso, texto }: { pasos: { t: string; d: number
         </button>
       ))}
     </div>
+  )
+}
+
+/** Hora exacta editable: escribe «1:23.456» o usa ↑ ↓ (1 ms; con Mayús 10 ms; con Alt 100 ms). */
+export function CampoTiempo({ valor, onChange, etiqueta }: { valor: number; onChange: (t: number) => void; etiqueta: string }): JSX.Element {
+  const [txt, setTxt] = useState(fmtMs(valor))
+  const [editando, setEditando] = useState(false)
+  useEffect(() => {
+    if (!editando) setTxt(fmtMs(valor))
+  }, [valor, editando])
+  const aplicar = (): void => {
+    const t = leerTiempo(txt)
+    if (t !== null && Math.abs(t - valor) > 1e-6) onChange(Math.max(0, t))
+    setEditando(false)
+    setTxt(fmtMs(t ?? valor))
+  }
+  return (
+    <input
+      aria-label={etiqueta}
+      title="Escribe la hora exacta (por ejemplo 1:23.456) o usa ↑ ↓: 1 ms (Mayús 10 ms, Alt 100 ms)"
+      value={txt}
+      onFocus={(e) => {
+        setEditando(true)
+        e.currentTarget.select()
+      }}
+      onChange={(e) => setTxt(e.target.value)}
+      onBlur={aplicar}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+        else if (e.key === 'Escape') {
+          setTxt(fmtMs(valor))
+          setEditando(false)
+          ;(e.target as HTMLInputElement).blur()
+        } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+          e.preventDefault()
+          const paso = (e.altKey ? 0.1 : e.shiftKey ? 0.01 : 0.001) * (e.key === 'ArrowUp' ? 1 : -1)
+          const base = leerTiempo(txt) ?? valor
+          const n = Math.max(0, base + paso)
+          setTxt(fmtMs(n))
+          onChange(n)
+        }
+      }}
+      className="num no-drag h-8 w-[108px] rounded-lg bg-sunken px-2 text-[13px] outline-none focus:ring-2 focus:ring-accent"
+    />
   )
 }

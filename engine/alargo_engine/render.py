@@ -52,6 +52,7 @@ EDICION_BASE = {
         "inst_fade_ms": 120.0,     # el instrumental se apaga en este tiempo al entrar la acapela
         "tail_fade_ms": 80.0,      # fundido del final
     },
+    "cortes_salida": [],           # trozos del RESULTADO que se quitan (segundos del extended): [{"ini_s": .., "fin_s": ..}]
     "cortes": [],                  # trozos de la canción que se quitan: [{"ini_s": .., "fin_s": ..}]
     "crossfade_ms": 6.0,
     "end_fade_ms": 0.0,            # fundido final cuando no hay acapela
@@ -68,6 +69,54 @@ def _mezclar_dict(base, extra):
         else:
             out[k] = v
     return out
+
+
+def limpiar_rangos(lista):
+    cs = sorted(({"ini_s": float(c["ini_s"]), "fin_s": float(c["fin_s"])} for c in (lista or []) if float(c["fin_s"]) - float(c["ini_s"]) > 0.02),
+                key=lambda c: c["ini_s"])
+    fus = []
+    for c in cs:
+        if fus and c["ini_s"] <= fus[-1]["fin_s"] + 0.01:
+            fus[-1]["fin_s"] = max(fus[-1]["fin_s"], c["fin_s"])
+        else:
+            fus.append(c)
+    return fus
+
+
+def quitar_tramos(out, rangos, xf):
+    """Quita rangos (segundos) del audio ya montado, con fundido corto en cada unión. Devuelve (audio, función tiempo->tiempo nuevo)."""
+    n = len(out)
+    xs = xf / SR
+    rr = [(max(0.0, c["ini_s"]), min(n / SR, c["fin_s"])) for c in rangos if c["fin_s"] > 0 and c["ini_s"] < n / SR]
+    rr = [(a, b) for a, b in rr if b - a > 0.005]
+    if not rr:
+        return out, (lambda t: t)
+    piezas = []
+    pos = 0.0
+    for a, b in rr:
+        if a - pos > 0.01:
+            piezas.append((pos, a))
+        pos = max(pos, b)
+    if n / SR - pos > 0.01:
+        piezas.append((pos, n / SR))
+    if not piezas:
+        raise ValueError("Has cortado todo el extended")
+    res = None
+    for k, (a, b) in enumerate(piezas):
+        ultimo = k == len(piezas) - 1
+        seg = out[int(round(a * SR)): min(n, int(round((b + (0 if ultimo else xs)) * SR)))]
+        res = seg if res is None else unir(res, seg, xf)
+
+    def mapa(t):
+        quitado = 0.0
+        for a, b in rr:
+            if t >= b:
+                quitado += b - a
+            elif t > a:
+                quitado += t - a
+        return t - quitado
+
+    return res, mapa
 
 
 def normalizar_edicion(ed):
@@ -88,15 +137,8 @@ def normalizar_edicion(ed):
     if it["enlace"]["tipo"] not in ("corte", "solapar"):
         it["enlace"]["tipo"] = "corte"
     it["enlace"]["ms"] = int(min(6000, max(100, it["enlace"]["ms"])))
-    cs = sorted(({"ini_s": float(c["ini_s"]), "fin_s": float(c["fin_s"])} for c in (ed.get("cortes") or []) if float(c["fin_s"]) - float(c["ini_s"]) > 0.02),
-                key=lambda c: c["ini_s"])
-    fus = []
-    for c in cs:
-        if fus and c["ini_s"] <= fus[-1]["fin_s"] + 0.01:
-            fus[-1]["fin_s"] = max(fus[-1]["fin_s"], c["fin_s"])
-        else:
-            fus.append(c)
-    ed["cortes"] = fus
+    ed["cortes"] = limpiar_rangos(ed.get("cortes"))
+    ed["cortes_salida"] = limpiar_rangos(ed.get("cortes_salida"))
     return ed
 
 
@@ -351,8 +393,6 @@ def render(S, an, ed):
                 sumar(i_hit, efectos.impacto(pico_ref * efectos._db(fxi["impacto"]["nivel_db"])))
             if fxi["caida_graves"]["on"]:
                 sumar(i_hit, efectos.sub_grave(pico_ref * efectos._db(fxi["caida_graves"]["nivel_db"])))
-            if fxi["bocina"]["on"]:
-                sumar(i_hit, efectos.bocina(pico_ref * efectos._db(fxi["bocina"]["nivel_db"]), T))
         info["golpe_s"] = round(t_hit, 3)
     else:
         out = cuerpo
@@ -441,8 +481,19 @@ def render(S, an, ed):
     if hay_acapela:
         segmentos.append(dict(tipo="acapela", ini=t_ac, fin=t_fin, origen_ini=tc))
     info["cortes_s"] = [round(t_cuerpo + c, 3) for c in cortes_rel]
+    mapa = None
+    if ed["cortes_salida"]:
+        out, mapa = quitar_tramos(out, ed["cortes_salida"], max(xf, int(0.008 * SR)))
+        nuevos = []
+        for sg in segmentos:
+            ini2, fin2 = mapa(sg["ini"]), mapa(sg["fin"])
+            if fin2 - ini2 > 0.02:
+                nuevos.append(dict(sg, ini=ini2, fin=fin2))
+        segmentos = nuevos
+        info["cortes_s"] = [round(mapa(c["ini_s"]), 3) for c in ed["cortes_salida"] if c["ini_s"] < len(out) / SR + 100] + info.get("cortes_s", [])
+        info["quitado_salida_s"] = round(sum(c["fin_s"] - c["ini_s"] for c in ed["cortes_salida"]), 3)
     info.update(duracion_s=round(len(out) / SR, 3), segmentos=segmentos, avisos=avisos,
-                uniones=[round(x, 3) for x in ([t_cuerpo] if intro is not None else []) + ([t_ac] if hay_acapela else [])])
+                uniones=[round(mapa(x) if mapa else x, 3) for x in ([t_cuerpo] if intro is not None else []) + ([t_ac] if hay_acapela else [])])
     info["quitado_s"] = round(quitado, 3)
     return out.astype(np.float32), info
 

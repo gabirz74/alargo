@@ -76,6 +76,9 @@ export function registrarIpc(): void {
     const r = await motorEditor().pedir('open', { proyecto: proy.dirProyecto(id) })
     return r
   })
+  ipcMain.handle('proy:picos-ventana', (_e, id: string, ini: number, fin: number, pps: number, escala: number) =>
+    motorEditor().pedir('picos_ventana', { proyecto: proy.dirProyecto(id), ini_s: ini, fin_s: fin, pps, escala })
+  )
   ipcMain.handle('proy:cerrar', async () => {
     try {
       await motorEditor().pedir('close')

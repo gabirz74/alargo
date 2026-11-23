@@ -26,6 +26,7 @@ const api = {
     reintentar: (id: string) => inv('proy:reintentar', id),
     renombrar: (id: string, t: string, a: string) => inv('proy:renombrar', id, t, a),
     abrir: (id: string) => inv('proy:abrir', id),
+    picosVentana: (id: string, ini: number, fin: number, pps: number, escala: number) => inv('proy:picos-ventana', id, ini, fin, pps, escala),
     cerrar: () => inv('proy:cerrar'),
     guardarEdicion: (id: string, ed: unknown) => inv('proy:guardar-edicion', id, ed),
     render: (id: string, ed: unknown) => inv('proy:render', id, ed),

@@ -315,7 +315,7 @@ def nivelar(x, objetivo, tope_db):
     return float(10 ** (min(objetivo - l, tope_db) / 20))
 
 
-def picos(x, pps=100, escala=None):
+def picos(x, pps=100, escala=None, ini_s=0.0):
     """Mín/máx por ventana (pps ventanas por segundo), como int8 en base64 (min,max intercalados)."""
     m = x.mean(1) if x.ndim == 2 else x
     h = SR // pps
@@ -326,7 +326,7 @@ def picos(x, pps=100, escala=None):
         escala = max(float(np.abs(m).max()), 1e-6)
     q = np.stack([mn, mx], 1) / escala * 127
     q = np.clip(np.round(q), -127, 127).astype(np.int8)
-    return dict(pps=pps, n=int(n), escala=float(escala), datos=base64.b64encode(q.tobytes()).decode("ascii"))
+    return dict(pps=pps, n=int(n), escala=float(escala), ini=float(ini_s), datos=base64.b64encode(q.tobytes()).decode("ascii"))
 
 
 # ----------------------------------------------------------------------------- melodías que se repiten (para elegir la intro)
@@ -394,4 +394,22 @@ def detectar_silencios(x, minimo_s=0.25, umbral_db=-50.0):
             i = j
         else:
             i += 1
+    return out
+
+
+def picos_bandas(x, pps=100, ini_s=0.0):
+    """Picos por frecuencias (graves / medios / agudos) para la onda de colores estilo DJ."""
+    from scipy.signal import butter, sosfilt
+
+    m = x.mean(1) if x.ndim == 2 else x
+    sos = dict(
+        bajos=butter(4, 200 / (SR / 2), btype="low", output="sos"),
+        medios=butter(4, [200 / (SR / 2), 3500 / (SR / 2)], btype="band", output="sos"),
+        altos=butter(4, 3500 / (SR / 2), btype="high", output="sos"),
+    )
+    out = {}
+    for k, f in sos.items():
+        y = sosfilt(f, m).astype(np.float32)
+        esc = float(np.percentile(np.abs(y[:: max(1, len(y) // 400000)]), 99.7)) + 1e-6
+        out[k] = picos(y, pps, esc, ini_s)
     return out

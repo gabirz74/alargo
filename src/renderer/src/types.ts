@@ -13,7 +13,6 @@ export type Efectos = {
     bateria: { on: boolean; nivel_db: number }
     platillo_inv: { on: boolean; tiempos: number; nivel_db: number }
     sirena: { on: boolean; compases: number; nivel_db: number }
-    bocina: { on: boolean; nivel_db: number }
     caida_graves: { on: boolean; nivel_db: number }
     freno: { on: boolean; tiempos: number }
     tartamudeo: { on: boolean; tiempos: number; division: number }
@@ -69,6 +68,7 @@ export type Edicion = {
   }
   grid?: { shift_s: number }
   cortes: { ini_s: number; fin_s: number }[]
+  cortes_salida: { ini_s: number; fin_s: number }[]
   crossfade_ms: number
   end_fade_ms: number
   master: { limiter: boolean }
@@ -121,6 +121,7 @@ export type InfoRender = {
   segmentos: Segmento[]
   uniones: number[]
   cortes_s?: number[]
+  silencios?: { ini_s: number; fin_s: number }[]
   quitado_s?: number
   avisos: string[]
   intro?: { duracion_s: number; tiempos: number; extra_pre: number; extra_post: number; ganancia_db: number }

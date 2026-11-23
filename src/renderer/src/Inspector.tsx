@@ -1,8 +1,8 @@
 import { useStore } from './store'
 import type { Fuente } from './types'
-import { Ajuste, Btn, Chip, Deslizador, Fila, Interruptor, Segmentado, Seccion } from './ui'
+import { Ajuste, Btn, CampoTiempo, Chip, Deslizador, Fila, Interruptor, Segmentado, Seccion } from './ui'
 import type { Capa, Efectos } from './types'
-import { barK, barNumber, barTime, fmt, normalizarCortes, T4 } from './util'
+import { aBruto, aPantalla, barK, barNumber, barTime, fmt, normalizarCortes, T4 } from './util'
 
 const sgn = (v: number, d = 1): string => (v > 0 ? '+' : '') + v.toFixed(d).replace('.', ',')
 
@@ -165,8 +165,11 @@ export function Inspector(): JSX.Element | null {
           </Btn>
           {e.intro.fuente_s !== null && <Btn tam="sm" variante="fantasma" icono="repetir" onClick={() => elegirTrozo(null)}>Volver al de la IA</Btn>}
         </div>
-        <Fila apilada etiqueta="Trozo que suena" ayuda={`Empieza en el compás ${barNumber(an, kFuente)} (${fmt(fuenteIntro, true)}). Cuenta ${it.bars} compases.`}>
-          <Ajuste pasos={[{ t: '−8', d: -8 }, { t: '−1', d: -1 }, { t: '+1', d: 1 }, { t: '+8', d: 8 }]} onPaso={(d) => elegirTrozo(barTime(an, kFuente + d))} />
+        <Fila apilada etiqueta="Trozo que suena" ayuda={`Empieza en el compás ${barNumber(an, kFuente)}. Cuenta ${it.bars} compases.`}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Ajuste pasos={[{ t: '−8', d: -8 }, { t: '−1', d: -1 }, { t: '+1', d: 1 }, { t: '+8', d: 8 }]} onPaso={(d) => elegirTrozo(barTime(an, kFuente + d))} />
+            <CampoTiempo etiqueta="Hora exacta del trozo" valor={fuenteIntro} onChange={(t) => elegirTrozo(t)} />
+          </div>
         </Fila>
         {(an.melodias?.length ?? 0) > 0 && (
           <div className="mt-2">
@@ -221,8 +224,11 @@ export function Inspector(): JSX.Element | null {
           <Ajuste
             pasos={[{ t: '−1 t', d: -T }, { t: '−10 ms', d: -0.01 }, { t: '+10 ms', d: 0.01 }, { t: '+1 t', d: T }]}
             onPaso={(d) => moverEntrada(e.song.start_s + d, 'voz')}
-            texto={fmt(e.song.start_s, true)}
           />
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-[12px] text-soft">Hora exacta</span>
+            <CampoTiempo etiqueta="Hora exacta de la entrada" valor={e.song.start_s} onChange={(t) => moverEntrada(t, 'voz')} />
+          </div>
           {cercanas.length > 0 && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <span className="text-[12px] text-faint">Entradas detectadas</span>
@@ -253,42 +259,52 @@ export function Inspector(): JSX.Element | null {
         </div>
       </Seccion>
 
-      <Seccion titulo="Cortar partes" resumen={(e.cortes ?? []).length ? `${(e.cortes ?? []).length} cortes` : 'Sin cortes'} descripcion="Quita de la canción los trozos que no te interesen o los huecos sin sonido. Marca el trozo con el ratón en la pista de arriba (se pega a los tiempos) y desaparece del resultado.">
+      <Seccion titulo="Cortar partes" resumen={(e.cortes_salida ?? []).length ? `${(e.cortes_salida ?? []).length} cortes` : 'Sin cortes'} descripcion="Quita cualquier trozo de tu extended ya montado (de la intro, de la canción o de la acapela) y las dos partes se unen. Hazlo al final, cuando el resto esté a tu gusto: los cortes se cuentan sobre el resultado.">
         <div className="mb-3 flex flex-wrap gap-2">
-          <Btn tam="sm" variante={seleccionando === 'corte' ? 'primario' : 'suave'} onClick={() => setSeleccionando(seleccionando === 'corte' ? false : 'corte')} titulo="Arrastra sobre la canción de arriba para marcar lo que quieres quitar">
-            {seleccionando === 'corte' ? 'Arrastra sobre la canción…' : 'Cortar con el ratón'}
+          <Btn tam="sm" variante={seleccionando === 'corte' ? 'primario' : 'suave'} onClick={() => setSeleccionando(seleccionando === 'corte' ? false : 'corte')} titulo="Arrastra sobre la pista «Tu extended» para marcar lo que quieres quitar">
+            {seleccionando === 'corte' ? 'Arrastra sobre «Tu extended»…' : 'Cortar con el ratón'}
           </Btn>
-          {(e.cortes ?? []).length > 0 && <Btn tam="sm" variante="fantasma" onClick={() => cambiar((x) => void (x.cortes = []))}>Quitar todos los cortes</Btn>}
+          {(e.cortes_salida ?? []).length > 0 && <Btn tam="sm" variante="fantasma" onClick={() => cambiar((x) => void (x.cortes_salida = []))}>Quitar todos los cortes</Btn>}
         </div>
-        {(e.cortes ?? []).length === 0 ? (
-          <p className="text-[12px] leading-snug text-faint">Todavía no has cortado nada. También puedes pulsar la × de un trozo marcado para deshacer ese corte.</p>
+        {(e.cortes_salida ?? []).length === 0 ? (
+          <p className="text-[12px] leading-snug text-faint">Todavía no has cortado nada. Marca un trozo con el ratón en la pista de abajo («Tu extended»); mantén Alt para marcarlo sin imán. También puedes pulsar la ✕ roja de un corte para deshacerlo.</p>
         ) : (
           <ul className="mb-3">
-            {(e.cortes ?? []).map((c, i) => (
-              <li key={`${c.ini_s}`} className="flex items-center justify-between gap-2 border-t border-line py-2 text-[13px] first:border-0">
-                <span className="num">{fmt(c.ini_s, true)} – {fmt(c.fin_s, true)} <span className="text-faint">· {(c.fin_s - c.ini_s).toFixed(1).replace('.', ',')} s</span></span>
-                <span className="flex gap-1">
-                  <Btn tam="sm" icono="play" titulo="Escuchar cómo queda el empalme" onClick={() => escucharCorte(i)}>Oír</Btn>
-                  <Btn tam="sm" variante="fantasma" onClick={() => quitarCorte(i)}>Quitar corte</Btn>
-                </span>
+            {(e.cortes_salida ?? []).map((c, i) => (
+              <li key={i} className="border-t border-line py-2 text-[13px] first:border-0">
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-soft">Corte {i + 1} · <span className="num">{(c.fin_s - c.ini_s).toFixed(3).replace('.', ',')} s</span></span>
+                  <span className="flex gap-1">
+                    <Btn tam="sm" icono="play" titulo="Escuchar cómo queda el empalme" onClick={() => escucharCorte(i)}>Oír</Btn>
+                    <Btn tam="sm" variante="fantasma" onClick={() => quitarCorte(i)}>Quitar corte</Btn>
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CampoTiempo etiqueta="Inicio del corte" valor={c.ini_s} onChange={(t) => cambiar((x) => void (x.cortes_salida[i].ini_s = t), 'corte-i' + i)} />
+                  <span className="text-faint">→</span>
+                  <CampoTiempo etiqueta="Fin del corte" valor={c.fin_s} onChange={(t) => cambiar((x) => void (x.cortes_salida[i].fin_s = t), 'corte-f' + i)} />
+                </div>
               </li>
             ))}
           </ul>
         )}
-        {(an.silencios?.length ?? 0) > 0 && (
+        {(info?.silencios?.length ?? 0) > 0 && (
           <div className="border-t border-line pt-3">
-            <div className="text-[13px] font-medium">Huecos sin sonido detectados</div>
-            <p className="mb-2 text-[12px] leading-snug text-faint">Pausas de más de un cuarto de segundo dentro de la canción.</p>
+            <div className="text-[13px] font-medium">Huecos sin sonido en tu extended</div>
+            <p className="mb-2 text-[12px] leading-snug text-faint">Pausas de más de un cuarto de segundo. Pulsa una para quitarla.</p>
             <div className="flex flex-wrap gap-1.5">
-              {an.silencios!.map((h) => (
-                <Chip key={h.ini_s} titulo="Quitar este hueco" onClick={() => anadirCorte(h.ini_s, h.fin_s)}>
+              {info!.silencios!.map((h) => (
+                <Chip key={h.ini_s} titulo="Quitar este hueco" onClick={() => anadirCorte(aBruto(h.ini_s, e.cortes_salida ?? []), aBruto(h.fin_s, e.cortes_salida ?? []))}>
                   {fmt(h.ini_s, true)} · {(h.fin_s - h.ini_s).toFixed(1).replace('.', ',')} s ✂
                 </Chip>
               ))}
             </div>
-            <div className="mt-2">
-              <Btn tam="sm" onClick={() => cambiar((x) => void (x.cortes = normalizarCortes([...(x.cortes ?? []), ...an.silencios!.map((h) => ({ ini_s: h.ini_s, fin_s: h.fin_s }))])))}>Quitar todos los huecos</Btn>
-            </div>
+          </div>
+        )}
+        {(e.cortes ?? []).length > 0 && (
+          <div className="mt-3 border-t border-line pt-3 text-[12px] text-faint">
+            Tienes {(e.cortes ?? []).length} corte(s) hechos sobre la canción original con una versión anterior.{' '}
+            <button type="button" className="underline underline-offset-2" onClick={() => cambiar((x) => void (x.cortes = []))}>Quitarlos</button>
           </div>
         )}
       </Seccion>
@@ -300,6 +316,9 @@ export function Inspector(): JSX.Element | null {
         {ac.enabled && ac.start_s !== null ? (
           <>
             <Acciones onEscuchar={() => escuchar('acapela')} onRestablecer={() => restablecerSeccion('acapela')} />
+            <Fila etiqueta="Hora exacta de inicio" ayuda="Escríbela o usa ↑ ↓ para afinar al milisegundo.">
+              <CampoTiempo etiqueta="Hora exacta de la acapela" valor={ac.start_s} onChange={(t) => cambiar((x) => void (x.acapela.start_s = t), 'ac-t')} />
+            </Fila>
             <Fila etiqueta="Empieza en el compás" ayuda={fmt(ac.start_s, true)}>
               <Ajuste pasos={[{ t: '−8', d: -8 }, { t: '−1', d: -1 }, { t: '+1', d: 1 }, { t: '+8', d: 8 }]} onPaso={(d) => cambiar((x) => void (x.acapela.start_s = barTime(an, barK(an, x.acapela.start_s ?? 0) + d)), 'ac-pos')} texto={String(barNumber(an, kAc))} />
             </Fila>
@@ -388,9 +407,6 @@ export function Inspector(): JSX.Element | null {
         </Efecto>
         <Efecto titulo="Caída de graves" ayuda="Un sub grave largo que retumba justo después del golpe." on={e.fx.intro.caida_graves.on} onChange={(v) => setFx((f) => void (f.intro.caida_graves.on = v))}>
           <Deslizador etiqueta="Volumen" valor={e.fx.intro.caida_graves.nivel_db} min={-24} max={-3} formato={(v) => `${v} dB`} onChange={(v) => setFx((f) => void (f.intro.caida_graves.nivel_db = v), 'fxc7')} />
-        </Efecto>
-        <Efecto titulo="Bocina de aire" ayuda="Tres toques de bocina al entrar, el clásico de reggaetón y club." on={e.fx.intro.bocina.on} onChange={(v) => setFx((f) => void (f.intro.bocina.on = v))}>
-          <Deslizador etiqueta="Volumen" valor={e.fx.intro.bocina.nivel_db} min={-30} max={-3} formato={(v) => `${v} dB`} onChange={(v) => setFx((f) => void (f.intro.bocina.nivel_db = v), 'fxc8')} />
         </Efecto>
       </Seccion>
 

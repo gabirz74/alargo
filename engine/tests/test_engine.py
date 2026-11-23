@@ -246,3 +246,24 @@ class Independencia(unittest.TestCase):
         self.assertEqual(len(a), len(b))
         self.assertFalse(np.allclose(a, b))
         self.assertTrue(np.isfinite(b).all())
+
+
+class CortesResultado(unittest.TestCase):
+    def test_cortes_de_salida(self):
+        from alargo_engine import fx
+
+        S, an = sintetico()
+        base, i0 = render.render(S, an, edicion(fx=fx.PRESETS["ninguno"]))
+        cort, i1 = render.render(S, an, edicion(fx=fx.PRESETS["ninguno"], cortes_salida=[{"ini_s": 2.0, "fin_s": 4.0}, {"ini_s": 30.0, "fin_s": 33.0}]))
+        self.assertAlmostEqual((len(base) - len(cort)) / SR, 5.0, delta=0.03)
+        self.assertEqual(len(i1["cortes_s"]), 2)
+        self.assertAlmostEqual(i1["duracion_s"], i0["duracion_s"] - 5.0, delta=0.03)
+        self.assertTrue(np.isfinite(cort).all())
+
+    def test_picos_bandas_y_ventana(self):
+        from alargo_engine import dsp
+
+        S, an = sintetico()
+        b = dsp.picos_bandas(S["original"][: SR * 5], 200, 1.0)
+        self.assertEqual(set(b), {"bajos", "medios", "altos"})
+        self.assertEqual(b["bajos"]["ini"], 1.0)

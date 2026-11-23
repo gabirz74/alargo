@@ -8,7 +8,7 @@ type Abierto = {
   proyecto: Proyecto
   analisis: Analisis
   t0Base: number
-  picos: { original: Picos; voz: Picos; inst: Picos }
+  picos: { original: Picos; voz: Picos; inst: Picos; bandas?: { bajos: Picos; medios: Picos; altos: Picos } }
   sugerencia: Edicion
   edicion: Edicion
   deshacer: Edicion[]
@@ -34,6 +34,12 @@ type Store = {
   exportando: { activo: boolean; fraction: number }
   zoom: number // píxeles por segundo; 0 = ajustar a la ventana
   fxPresets: Record<string, Efectos>
+  iman: 'auto' | 'compas' | 'tiempo' | 'libre'
+  seguir: boolean
+  ondaModo: 'voz' | 'frecuencias'
+  alto: number
+  zoomFit: number
+  setVista: (v: Partial<Pick<Store, 'iman' | 'seguir' | 'ondaModo' | 'alto' | 'zoomFit'>>) => void
   seleccionando: false | 'intro' | 'corte'
   setSeleccionando: (v: false | 'intro' | 'corte') => void
   moverEntrada: (nuevoR: number, clave?: string) => void
@@ -125,6 +131,7 @@ function sanear(e: Edicion, an: Analisis): void {
   if (e.acapela.start_s !== null) e.acapela.start_s = clamp(e.acapela.start_s, 1, dur - 1)
   e.acapela.bars = clamp(Math.round(e.acapela.bars), 1, 64)
   e.cortes = e.cortes ?? []
+  e.cortes_salida = e.cortes_salida ?? []
   e.intro.bars = clamp(Math.round(e.intro.bars), 1, 32)
 }
 
@@ -141,6 +148,11 @@ export const useStore = create<Store>((set, get) => ({
   exportando: { activo: false, fraction: 0 },
   zoom: 0,
   fxPresets: {},
+  iman: (leerLS('alargo-iman', 'auto') as Store['iman']),
+  seguir: leerLS('alargo-seguir', '1') === '1',
+  ondaModo: (leerLS('alargo-onda', 'voz') as Store['ondaModo']),
+  alto: parseFloat(leerLS('alargo-alto', '1')) || 1,
+  zoomFit: 1,
   seleccionando: false,
   autoEscuchar: leerLS('alargo-auto', '1') === '1',
   resalte: null,
@@ -238,7 +250,12 @@ export const useStore = create<Store>((set, get) => ({
         proyecto: r.proyecto ?? p,
         analisis: r.analisis,
         t0Base: r.analisis.grid.t0,
-        picos: { original: decodificarPicos(r.picos.original), voz: decodificarPicos(r.picos.voz), inst: decodificarPicos(r.picos.inst) },
+        picos: {
+          original: decodificarPicos(r.picos.original),
+          voz: decodificarPicos(r.picos.voz),
+          inst: decodificarPicos(r.picos.inst),
+          bandas: r.picos.bandas ? { bajos: decodificarPicos(r.picos.bandas.bajos), medios: decodificarPicos(r.picos.bandas.medios), altos: decodificarPicos(r.picos.bandas.altos) } : undefined
+        },
         sugerencia: r.sugerencia,
         edicion,
         deshacer: [],
@@ -278,7 +295,7 @@ export const useStore = create<Store>((set, get) => ({
     const cambioFxIntro = JSON.stringify(a.edicion.fx?.intro) !== JSON.stringify(nueva.fx?.intro)
     const cambioFxSalida = JSON.stringify(a.edicion.fx?.salida) !== JSON.stringify(nueva.fx?.salida)
     const cambioFuente = JSON.stringify([a.edicion.intro.fuente_s, a.edicion.intro.capas]) !== JSON.stringify([nueva.intro.fuente_s, nueva.intro.capas])
-    const cambioCortes = JSON.stringify(a.edicion.cortes) !== JSON.stringify(nueva.cortes)
+    const cambioCortes = JSON.stringify([a.edicion.cortes, a.edicion.cortes_salida]) !== JSON.stringify([nueva.cortes, nueva.cortes_salida])
     zonaPendiente = cambioCortes ? 'corte' : cambioFuente ? 'introTodo' : cambioIntro || cambioFxIntro ? 'intro' : cambioAcap ? 'acapela' : cambioFxSalida ? 'fin' : null
     const ahora = Date.now()
     const fusionar = !!clave && clave === ultimaClave && ahora - ultimoCambio < 900
@@ -372,6 +389,14 @@ export const useStore = create<Store>((set, get) => ({
 
   setSeleccionando: (v) => set({ seleccionando: v }),
 
+  setVista(v) {
+    if (v.iman) guardarLS('alargo-iman', v.iman)
+    if (v.seguir !== undefined) guardarLS('alargo-seguir', v.seguir ? '1' : '0')
+    if (v.ondaModo) guardarLS('alargo-onda', v.ondaModo)
+    if (v.alto) guardarLS('alargo-alto', String(v.alto))
+    set(v)
+  },
+
   moverEntrada(nuevoR, clave) {
     const a = get().abierto
     if (!a) return
@@ -386,17 +411,17 @@ export const useStore = create<Store>((set, get) => ({
   anadirCorte(ini, fin) {
     if (fin - ini < 0.05) return
     get().cambiar((e) => {
-      const lista = normalizarCortes([...(e.cortes ?? []), { ini_s: ini, fin_s: fin }])
-      e.cortes = lista
+      const lista = normalizarCortes([...(e.cortes_salida ?? []), { ini_s: ini, fin_s: fin }])
+      e.cortes_salida = lista
       corteIdx = Math.max(0, lista.findIndex((c) => ini >= c.ini_s - 0.02 && ini <= c.fin_s + 0.02))
     })
   },
 
   quitarCorte(i) {
     get().cambiar((e) => {
-      const l = (e.cortes ?? []).slice()
+      const l = (e.cortes_salida ?? []).slice()
       l.splice(i, 1)
-      e.cortes = l
+      e.cortes_salida = l
     })
   },
 
